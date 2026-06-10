@@ -183,7 +183,7 @@ export const recommendOutfits = createServerFn({ method: "POST" })
         occasion: data.occasion,
         category: data.category ?? null,
         prompt: data.notes ?? null,
-        outfits: parsed as unknown as Record<string, unknown>,
+        outfits: JSON.parse(JSON.stringify(parsed)),
         selfie_upload_id: data.selfieUploadId ?? null,
       })
       .select("id")
