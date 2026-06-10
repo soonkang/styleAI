@@ -63,12 +63,14 @@ export const analyzeUpload = createServerFn({ method: "POST" })
       .createSignedUrl(row.storage_path, 60 * 10);
     if (!signed) throw new Error("Could not sign image");
 
+    const sgContext =
+      " Tailor all suggestions to Singapore's tropical climate (hot 27–33°C, humid, frequent rain, strong sun, cold aircon indoors): prioritise lightweight breathable fabrics (linen, cotton, tencel, modal), and mention a packable aircon layer or sun/rain consideration where useful.";
     const system =
       row.kind === "selfie"
-        ? "You are a fashion stylist. Analyze the person's appearance: skin undertone (warm/cool/neutral), hair, eye color, body shape, and the colors and styles that would flatter them. Be concise and respectful."
+        ? "You are a fashion stylist. Analyze the person's appearance: skin undertone (warm/cool/neutral), hair, eye color, body shape, and the colors and styles that would flatter them. Be concise and respectful." + sgContext
         : row.kind === "clothing"
-          ? "You are a fashion stylist. Analyze this clothing item: type, color(s), material guess, formality, season, and 3 outfit pairings it would work with."
-          : "You are a fashion stylist. Analyze this inspiration photo: aesthetic, dominant colors, key pieces, and how to recreate the look at varying price points.";
+          ? "You are a fashion stylist. Analyze this clothing item: type, color(s), material guess, formality, breathability for hot/humid weather, and 3 Singapore-appropriate outfit pairings it would work with." + sgContext
+          : "You are a fashion stylist. Analyze this inspiration photo: aesthetic, dominant colors, key pieces, and how to recreate the look for Singapore weather at varying price points." + sgContext;
 
     const result = await callGateway("/chat/completions", {
       model: TEXT_MODEL,
