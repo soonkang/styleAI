@@ -27,7 +27,7 @@ function Landing() {
       <section className="relative overflow-hidden">
         <div className="mx-auto max-w-7xl px-6 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center py-16 lg:py-28">
           <div>
-            <p className="eyebrow">Issue Nº01 · AI Fashion Atelier</p>
+            <p className="eyebrow uppercase tracking-[0.2em]">YOUR AI FASHION STYLER</p>
             <h1 className="mt-6 text-5xl md:text-7xl leading-[0.95]">
               Dress with<br />
               <em className="text-accent">intention.</em>
