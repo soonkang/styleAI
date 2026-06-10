@@ -60,6 +60,45 @@ function Discover() {
     },
   });
 
+  async function onSelfieUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      e.target.value = "";
+      return;
+    }
+    setUploadingSelfie(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+      const path = `${user.id}/selfie-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("user-uploads").upload(path, file, {
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data: row, error: insErr } = await supabase
+        .from("uploads")
+        .insert({ user_id: user.id, kind: "selfie", storage_path: path })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      toast.success("Selfie uploaded. Analyzing…");
+      setSelfieId(row.id);
+      selfies.refetch();
+      analyzeFn({ data: { uploadId: row.id } })
+        .then(() => {
+          toast.success("Selfie analysis ready.");
+          selfies.refetch();
+        })
+        .catch(() => {});
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingSelfie(false);
+      e.target.value = "";
+    }
+  }
+
   async function generate() {
     setLoading(true);
     setResult(null);
