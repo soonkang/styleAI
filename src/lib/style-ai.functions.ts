@@ -289,3 +289,80 @@ export const generateTryOn = createServerFn({ method: "POST" })
       .createSignedUrl(path, 60 * 60);
     return { url: signed?.signedUrl ?? "", path };
   });
+
+// ─────────────────────────────────────────────────────────────
+// Custom try-on: user uploads their own clothing image(s) and (optionally)
+// a selfie. We render an editorial photo of the user wearing those pieces.
+// ─────────────────────────────────────────────────────────────
+export const customTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      clothingUploadIds: z.array(z.string().uuid()).min(1).max(4),
+      selfieUploadId: z.string().uuid().optional(),
+      notes: z.string().max(300).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    async function signUpload(id: string) {
+      const { data: up } = await context.supabase
+        .from("uploads")
+        .select("storage_path")
+        .eq("id", id)
+        .single();
+      if (!up) return null;
+      const { data: signed } = await context.supabase.storage
+        .from("user-uploads")
+        .createSignedUrl(up.storage_path, 60 * 10);
+      return signed?.signedUrl ?? null;
+    }
+
+    const clothingUrls = (
+      await Promise.all(data.clothingUploadIds.map(signUpload))
+    ).filter((u): u is string => !!u);
+    if (clothingUrls.length === 0) throw new Error("No clothing images found");
+
+    const selfieUrl = data.selfieUploadId ? await signUpload(data.selfieUploadId) : null;
+
+    const prompt =
+      `Editorial full-body fashion photograph, soft natural light, neutral studio backdrop, Singapore styling. ` +
+      `Dress the subject in the exact clothing pieces shown in the attached clothing reference image(s) — preserve their color, pattern, cut and proportions faithfully. ` +
+      (selfieUrl
+        ? "Use the attached person's face, hair, skin tone and body shape faithfully — do not change their identity. "
+        : "Use a neutral anonymous model with a relaxed pose. ") +
+      (data.notes ? `Additional notes: ${data.notes}.` : "");
+
+    const userContent: Array<Record<string, unknown>> = [{ type: "text", text: prompt }];
+    if (selfieUrl) userContent.push({ type: "image_url", image_url: { url: selfieUrl } });
+    for (const url of clothingUrls) {
+      userContent.push({ type: "image_url", image_url: { url } });
+    }
+
+    const result = await callGateway("/chat/completions", {
+      model: IMAGE_MODEL,
+      messages: [{ role: "user", content: userContent }],
+      modalities: ["image", "text"],
+    });
+
+    const msg = result?.choices?.[0]?.message;
+    const imgUrl: string | undefined =
+      msg?.images?.[0]?.image_url?.url ?? msg?.images?.[0]?.url;
+    if (!imgUrl) throw new Error("No image returned by the model");
+
+    const m = imgUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!m) throw new Error("Unexpected image format");
+    const mime = m[1];
+    const ext = mime.split("/")[1];
+    const bytes = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    const path = `${context.userId}/custom-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: signed } = await context.supabase.storage
+      .from("tryons")
+      .createSignedUrl(path, 60 * 60);
+    return { url: signed?.signedUrl ?? "", path };
+  });
