@@ -159,13 +159,22 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     });
 
     const content: string = result?.choices?.[0]?.message?.content ?? "{}";
-    let parsed: { outfits: unknown[] };
+    type OutfitItem = { category: string; description: string; color: string; search_query: string };
+    type Outfit = {
+      name: string;
+      summary: string;
+      items: OutfitItem[];
+      why_it_works: string;
+      styling_tips: string[];
+    };
+    let parsed: { outfits: Outfit[] };
     try {
       parsed = JSON.parse(content);
     } catch {
       const m = content.match(/\{[\s\S]*\}/);
       parsed = m ? JSON.parse(m[0]) : { outfits: [] };
     }
+    if (!Array.isArray(parsed.outfits)) parsed.outfits = [];
 
     const { data: saved, error } = await context.supabase
       .from("recommendations")
@@ -174,13 +183,13 @@ export const recommendOutfits = createServerFn({ method: "POST" })
         occasion: data.occasion,
         category: data.category ?? null,
         prompt: data.notes ?? null,
-        outfits: parsed,
+        outfits: parsed as unknown as Record<string, unknown>,
         selfie_upload_id: data.selfieUploadId ?? null,
       })
       .select("id")
       .single();
     if (error) throw new Error(error.message);
-    return { id: saved.id, ...parsed };
+    return { id: saved.id, outfits: parsed.outfits };
   });
 
 // ─────────────────────────────────────────────────────────────
