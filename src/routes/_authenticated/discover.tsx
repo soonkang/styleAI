@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { recommendOutfits, generateTryOn } from "@/lib/style-ai.functions";
+import { recommendOutfits, generateTryOn, analyzeUpload } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/discover")({
@@ -35,12 +35,14 @@ function Discover() {
   const { user } = Route.useRouteContext();
   const recFn = useServerFn(recommendOutfits);
   const tryOnFn = useServerFn(generateTryOn);
+  const analyzeFn = useServerFn(analyzeUpload);
 
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
   const [notes, setNotes] = useState("");
   const [selfieId, setSelfieId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryon, setTryon] = useState<Record<number, { url: string; loading: boolean }>>({});
 
@@ -57,6 +59,45 @@ function Discover() {
       return data ?? [];
     },
   });
+
+  async function onSelfieUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      e.target.value = "";
+      return;
+    }
+    setUploadingSelfie(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+      const path = `${user.id}/selfie-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("user-uploads").upload(path, file, {
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data: row, error: insErr } = await supabase
+        .from("uploads")
+        .insert({ user_id: user.id, kind: "selfie", storage_path: path })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      toast.success("Selfie uploaded. Analyzing…");
+      setSelfieId(row.id);
+      selfies.refetch();
+      analyzeFn({ data: { uploadId: row.id } })
+        .then(() => {
+          toast.success("Selfie analysis ready.");
+          selfies.refetch();
+        })
+        .catch(() => {});
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingSelfie(false);
+      e.target.value = "";
+    }
+  }
 
   async function generate() {
     setLoading(true);
@@ -143,6 +184,17 @@ function Discover() {
               <option key={s.id} value={s.id}>Selfie from {new Date(s.created_at).toLocaleDateString()}</option>
             ))}
           </select>
+          <label className="mt-2 inline-block text-xs border-b border-foreground cursor-pointer hover:text-accent hover:border-accent">
+            {uploadingSelfie ? "Uploading…" : "+ Upload a new selfie"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              onChange={onSelfieUpload}
+              disabled={uploadingSelfie}
+              className="hidden"
+            />
+          </label>
         </label>
 
         <label className="block md:col-span-2">
