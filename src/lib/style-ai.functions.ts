@@ -131,9 +131,14 @@ export const recommendOutfits = createServerFn({ method: "POST" })
       {
         role: "system",
         content:
-          "You are StyleAI, a personal fashion stylist. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. Always respond with VALID JSON only — no prose, no markdown fences — matching this schema:\n" +
+          "You are StyleAI, a personal fashion stylist based in Singapore. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. " +
+          "IMPORTANT CLIMATE CONTEXT: The user is in Singapore — hot (27–33°C), humid (70–90%), with frequent rain and strong sun. Indoor venues (malls, offices, MRT) are heavily air-conditioned and cold. " +
+          "Default to lightweight, breathable, sweat-friendly fabrics (linen, cotton, tencel, modal, performance knits). Avoid wool, heavy denim, leather, thick layers, and anything that traps heat. " +
+          "Always include at least one practical Singapore touch where relevant: a packable light layer for aircon, breathable footwear, sun/rain consideration, or moisture-wicking fabric. " +
+          "Reference Singapore-accessible retailers in search_query when sensible (Uniqlo, Zara, Cotton On, Love Bonito, Charles & Keith, Pedro, Lazada, Shopee, Zalora). " +
+          "Always respond with VALID JSON only — no prose, no markdown fences — matching this schema:\n" +
           `{"outfits":[{"name":string,"summary":string,"items":[{"category":string,"description":string,"color":string,"search_query":string}],"why_it_works":string,"styling_tips":[string]}]}\n` +
-          "search_query should be a short phrase a user can paste into Google Shopping or ASOS to find that piece.",
+          "search_query should be a short phrase a user can paste into Google Shopping, Zalora, or Lazada to find that piece.",
       },
       {
         role: "user",
