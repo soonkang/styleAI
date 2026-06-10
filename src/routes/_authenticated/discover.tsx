@@ -226,7 +226,26 @@ function Discover() {
       <p className="eyebrow">Discover</p>
       <h1 className="mt-3 text-5xl font-serif">Compose a <em className="text-accent">look</em>.</h1>
 
-      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 border border-border p-8 bg-card">
+      <div className="mt-8 flex gap-2 border-b border-border">
+        {([
+          ["occasion", "By occasion"],
+          ["custom", "Custom try-on"],
+        ] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setMode(k)}
+            className={`px-5 py-3 text-sm uppercase tracking-wider -mb-px border-b-2 ${
+              mode === k ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === "occasion" && (
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 border border-border p-8 bg-card">
+
         <label className="block md:col-span-2">
           <span className="eyebrow">Occasion</span>
           <input
