@@ -14,7 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          bottom_size: string | null
+          created_at: string
+          full_name: string | null
+          gender: string | null
+          height_cm: number | null
+          id: string
+          style_preferences: string | null
+          top_size: string | null
+          updated_at: string
+          user_id: string
+          weight_kg: number | null
+        }
+        Insert: {
+          bottom_size?: string | null
+          created_at?: string
+          full_name?: string | null
+          gender?: string | null
+          height_cm?: number | null
+          id?: string
+          style_preferences?: string | null
+          top_size?: string | null
+          updated_at?: string
+          user_id: string
+          weight_kg?: number | null
+        }
+        Update: {
+          bottom_size?: string | null
+          created_at?: string
+          full_name?: string | null
+          gender?: string | null
+          height_cm?: number | null
+          id?: string
+          style_preferences?: string | null
+          top_size?: string | null
+          updated_at?: string
+          user_id?: string
+          weight_kg?: number | null
+        }
+        Relationships: []
+      }
+      recommendations: {
+        Row: {
+          category: string | null
+          created_at: string
+          id: string
+          occasion: string
+          outfits: Json
+          prompt: string | null
+          selfie_upload_id: string | null
+          tryon_image_path: string | null
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          occasion: string
+          outfits: Json
+          prompt?: string | null
+          selfie_upload_id?: string | null
+          tryon_image_path?: string | null
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          created_at?: string
+          id?: string
+          occasion?: string
+          outfits?: Json
+          prompt?: string | null
+          selfie_upload_id?: string | null
+          tryon_image_path?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recommendations_selfie_upload_id_fkey"
+            columns: ["selfie_upload_id"]
+            isOneToOne: false
+            referencedRelation: "uploads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      uploads: {
+        Row: {
+          analysis: Json | null
+          created_at: string
+          id: string
+          kind: string
+          storage_path: string
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json | null
+          created_at?: string
+          id?: string
+          kind: string
+          storage_path: string
+          user_id: string
+        }
+        Update: {
+          analysis?: Json | null
+          created_at?: string
+          id?: string
+          kind?: string
+          storage_path?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
