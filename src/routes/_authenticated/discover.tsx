@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { recommendOutfits, generateTryOn, analyzeUpload } from "@/lib/style-ai.functions";
+import { recommendOutfits, generateTryOn, analyzeUpload, customTryOn } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/discover")({
@@ -36,7 +36,9 @@ function Discover() {
   const recFn = useServerFn(recommendOutfits);
   const tryOnFn = useServerFn(generateTryOn);
   const analyzeFn = useServerFn(analyzeUpload);
+  const customTryOnFn = useServerFn(customTryOn);
 
+  const [mode, setMode] = useState<"occasion" | "custom">("occasion");
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
   const [notes, setNotes] = useState("");
@@ -45,6 +47,13 @@ function Discover() {
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryon, setTryon] = useState<Record<number, { url: string; loading: boolean }>>({});
+
+  // Custom try-on state
+  const [customClothingIds, setCustomClothingIds] = useState<string[]>([]);
+  const [uploadingClothing, setUploadingClothing] = useState(false);
+  const [customNotes, setCustomNotes] = useState("");
+  const [customLoading, setCustomLoading] = useState(false);
+  const [customResult, setCustomResult] = useState<string | null>(null);
 
   const selfies = useQuery({
     queryKey: ["selfies", user.id],
@@ -59,6 +68,85 @@ function Discover() {
       return data ?? [];
     },
   });
+
+  const clothing = useQuery({
+    queryKey: ["clothing", user.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("uploads")
+        .select("id, storage_path, created_at")
+        .eq("user_id", user.id)
+        .eq("kind", "clothing")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const withUrls = await Promise.all(
+        (data ?? []).map(async (u) => {
+          const { data: s } = await supabase.storage
+            .from("user-uploads")
+            .createSignedUrl(u.storage_path, 60 * 30);
+          return { ...u, url: s?.signedUrl ?? "" };
+        }),
+      );
+      return withUrls;
+    },
+  });
+
+  async function onClothingUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      e.target.value = "";
+      return;
+    }
+    setUploadingClothing(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+      const path = `${user.id}/clothing-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("user-uploads").upload(path, file, {
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data: row, error: insErr } = await supabase
+        .from("uploads")
+        .insert({ user_id: user.id, kind: "clothing", storage_path: path })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      toast.success("Clothing added.");
+      setCustomClothingIds((ids) => [...ids, row.id]);
+      clothing.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingClothing(false);
+      e.target.value = "";
+    }
+  }
+
+  async function runCustomTryOn() {
+    if (customClothingIds.length === 0) {
+      toast.error("Add at least one clothing image first.");
+      return;
+    }
+    setCustomLoading(true);
+    setCustomResult(null);
+    try {
+      const res = await customTryOnFn({
+        data: {
+          clothingUploadIds: customClothingIds,
+          selfieUploadId: selfieId || undefined,
+          notes: customNotes || undefined,
+        },
+      });
+      setCustomResult(res.url);
+      toast.success("Your custom try-on is ready.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Try-on failed");
+    } finally {
+      setCustomLoading(false);
+    }
+  }
 
   async function onSelfieUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -138,7 +226,26 @@ function Discover() {
       <p className="eyebrow">Discover</p>
       <h1 className="mt-3 text-5xl font-serif">Compose a <em className="text-accent">look</em>.</h1>
 
-      <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 border border-border p-8 bg-card">
+      <div className="mt-8 flex gap-2 border-b border-border">
+        {([
+          ["occasion", "By occasion"],
+          ["custom", "Custom try-on"],
+        ] as const).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setMode(k)}
+            className={`px-5 py-3 text-sm uppercase tracking-wider -mb-px border-b-2 ${
+              mode === k ? "border-foreground text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {mode === "occasion" && (
+      <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 border border-border p-8 bg-card">
+
         <label className="block md:col-span-2">
           <span className="eyebrow">Occasion</span>
           <input
@@ -216,6 +323,112 @@ function Discover() {
           {loading ? "Composing your looks…" : "Generate outfits"}
         </button>
       </div>
+      )}
+
+      {mode === "custom" && (
+      <div className="mt-8 border border-border p-8 bg-card space-y-6">
+        <div>
+          <p className="eyebrow">Your clothing</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Upload one or more pieces — a top, a dress, shoes — and we'll render you wearing them.
+          </p>
+          <div className="mt-4 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3">
+            {clothing.data?.map((c) => {
+              const selected = customClothingIds.includes(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() =>
+                    setCustomClothingIds((ids) =>
+                      selected ? ids.filter((i) => i !== c.id) : [...ids, c.id],
+                    )
+                  }
+                  className={`relative aspect-square overflow-hidden border ${
+                    selected ? "border-foreground ring-2 ring-foreground" : "border-border hover:border-foreground"
+                  }`}
+                >
+                  {c.url && <img src={c.url} alt="clothing" className="w-full h-full object-cover" />}
+                  {selected && (
+                    <span className="absolute top-1 right-1 bg-foreground text-background text-[10px] px-1.5 py-0.5">✓</span>
+                  )}
+                </button>
+              );
+            })}
+            <label className="aspect-square border border-dashed border-border flex items-center justify-center text-xs text-muted-foreground cursor-pointer hover:border-foreground hover:text-foreground">
+              {uploadingClothing ? "…" : "+ Upload"}
+              <input
+                type="file"
+                accept="image/*"
+                onChange={onClothingUpload}
+                disabled={uploadingClothing}
+                className="hidden"
+              />
+            </label>
+          </div>
+          {customClothingIds.length > 0 && (
+            <p className="mt-3 text-xs text-muted-foreground">
+              {customClothingIds.length} piece{customClothingIds.length > 1 ? "s" : ""} selected
+            </p>
+          )}
+        </div>
+
+        <label className="block">
+          <span className="eyebrow">Selfie (optional)</span>
+          <select
+            value={selfieId}
+            onChange={(e) => setSelfieId(e.target.value)}
+            className="mt-2 w-full bg-transparent border border-input px-4 py-3 text-sm focus:outline-none focus:border-foreground"
+          >
+            <option value="">— None —</option>
+            {selfies.data?.map((s) => (
+              <option key={s.id} value={s.id}>Selfie from {new Date(s.created_at).toLocaleDateString()}</option>
+            ))}
+          </select>
+          <label className="mt-2 inline-block text-xs border-b border-foreground cursor-pointer hover:text-accent hover:border-accent">
+            {uploadingSelfie ? "Uploading…" : "+ Upload a new selfie"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              onChange={onSelfieUpload}
+              disabled={uploadingSelfie}
+              className="hidden"
+            />
+          </label>
+        </label>
+
+        <label className="block">
+          <span className="eyebrow">Styling notes</span>
+          <textarea
+            value={customNotes}
+            onChange={(e) => setCustomNotes(e.target.value)}
+            rows={2}
+            placeholder="Tuck the shirt, roll the sleeves, sneakers untied…"
+            className="mt-2 w-full bg-transparent border border-input px-4 py-3 text-sm focus:outline-none focus:border-foreground"
+          />
+        </label>
+
+        <button
+          onClick={runCustomTryOn}
+          disabled={customLoading || customClothingIds.length === 0}
+          className="w-full bg-foreground text-background py-4 text-sm tracking-widest uppercase hover:bg-accent hover:text-accent-foreground transition-colors disabled:opacity-50"
+        >
+          {customLoading ? "Rendering your try-on…" : "Generate try-on"}
+        </button>
+
+        {(customLoading || customResult) && (
+          <div className="mt-4 bg-secondary/40 aspect-[3/4] max-w-md mx-auto flex items-center justify-center border border-border overflow-hidden">
+            {customResult ? (
+              <img src={customResult} alt="Custom try-on" className="w-full h-full object-cover" />
+            ) : (
+              <p className="text-muted-foreground text-sm animate-pulse">Rendering try-on…</p>
+            )}
+          </div>
+        )}
+      </div>
+      )}
+
 
       {result && (
         <div className="mt-16 space-y-16">
