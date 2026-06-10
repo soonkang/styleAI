@@ -63,12 +63,14 @@ export const analyzeUpload = createServerFn({ method: "POST" })
       .createSignedUrl(row.storage_path, 60 * 10);
     if (!signed) throw new Error("Could not sign image");
 
+    const sgContext =
+      " Tailor all suggestions to Singapore's tropical climate (hot 27–33°C, humid, frequent rain, strong sun, cold aircon indoors): prioritise lightweight breathable fabrics (linen, cotton, tencel, modal), and mention a packable aircon layer or sun/rain consideration where useful.";
     const system =
       row.kind === "selfie"
-        ? "You are a fashion stylist. Analyze the person's appearance: skin undertone (warm/cool/neutral), hair, eye color, body shape, and the colors and styles that would flatter them. Be concise and respectful."
+        ? "You are a fashion stylist. Analyze the person's appearance: skin undertone (warm/cool/neutral), hair, eye color, body shape, and the colors and styles that would flatter them. Be concise and respectful." + sgContext
         : row.kind === "clothing"
-          ? "You are a fashion stylist. Analyze this clothing item: type, color(s), material guess, formality, season, and 3 outfit pairings it would work with."
-          : "You are a fashion stylist. Analyze this inspiration photo: aesthetic, dominant colors, key pieces, and how to recreate the look at varying price points.";
+          ? "You are a fashion stylist. Analyze this clothing item: type, color(s), material guess, formality, breathability for hot/humid weather, and 3 Singapore-appropriate outfit pairings it would work with." + sgContext
+          : "You are a fashion stylist. Analyze this inspiration photo: aesthetic, dominant colors, key pieces, and how to recreate the look for Singapore weather at varying price points." + sgContext;
 
     const result = await callGateway("/chat/completions", {
       model: TEXT_MODEL,
@@ -131,9 +133,14 @@ export const recommendOutfits = createServerFn({ method: "POST" })
       {
         role: "system",
         content:
-          "You are StyleAI, a personal fashion stylist. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. Always respond with VALID JSON only — no prose, no markdown fences — matching this schema:\n" +
+          "You are StyleAI, a personal fashion stylist based in Singapore. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. " +
+          "IMPORTANT CLIMATE CONTEXT: The user is in Singapore — hot (27–33°C), humid (70–90%), with frequent rain and strong sun. Indoor venues (malls, offices, MRT) are heavily air-conditioned and cold. " +
+          "Default to lightweight, breathable, sweat-friendly fabrics (linen, cotton, tencel, modal, performance knits). Avoid wool, heavy denim, leather, thick layers, and anything that traps heat. " +
+          "Always include at least one practical Singapore touch where relevant: a packable light layer for aircon, breathable footwear, sun/rain consideration, or moisture-wicking fabric. " +
+          "Reference Singapore-accessible retailers in search_query when sensible (Uniqlo, Zara, Cotton On, Love Bonito, Charles & Keith, Pedro, Lazada, Shopee, Zalora). " +
+          "Always respond with VALID JSON only — no prose, no markdown fences — matching this schema:\n" +
           `{"outfits":[{"name":string,"summary":string,"items":[{"category":string,"description":string,"color":string,"search_query":string}],"why_it_works":string,"styling_tips":[string]}]}\n` +
-          "search_query should be a short phrase a user can paste into Google Shopping or ASOS to find that piece.",
+          "search_query should be a short phrase a user can paste into Google Shopping, Zalora, or Lazada to find that piece.",
       },
       {
         role: "user",
