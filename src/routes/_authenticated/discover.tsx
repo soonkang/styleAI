@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/discover")({
   head: () => ({ meta: [{ title: "Discover — StyleAI" }] }),
-  component: Discover;
+  component: Discover,
 });
 
 const OCCASIONS = [
