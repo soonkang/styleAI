@@ -184,6 +184,17 @@ function Discover() {
               <option key={s.id} value={s.id}>Selfie from {new Date(s.created_at).toLocaleDateString()}</option>
             ))}
           </select>
+          <label className="mt-2 inline-block text-xs border-b border-foreground cursor-pointer hover:text-accent hover:border-accent">
+            {uploadingSelfie ? "Uploading…" : "+ Upload a new selfie"}
+            <input
+              type="file"
+              accept="image/*"
+              capture="user"
+              onChange={onSelfieUpload}
+              disabled={uploadingSelfie}
+              className="hidden"
+            />
+          </label>
         </label>
 
         <label className="block md:col-span-2">
