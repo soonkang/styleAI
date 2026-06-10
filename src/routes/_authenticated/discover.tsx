@@ -36,7 +36,9 @@ function Discover() {
   const recFn = useServerFn(recommendOutfits);
   const tryOnFn = useServerFn(generateTryOn);
   const analyzeFn = useServerFn(analyzeUpload);
+  const customTryOnFn = useServerFn(customTryOn);
 
+  const [mode, setMode] = useState<"occasion" | "custom">("occasion");
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
   const [notes, setNotes] = useState("");
@@ -45,6 +47,13 @@ function Discover() {
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryon, setTryon] = useState<Record<number, { url: string; loading: boolean }>>({});
+
+  // Custom try-on state
+  const [customClothingIds, setCustomClothingIds] = useState<string[]>([]);
+  const [uploadingClothing, setUploadingClothing] = useState(false);
+  const [customNotes, setCustomNotes] = useState("");
+  const [customLoading, setCustomLoading] = useState(false);
+  const [customResult, setCustomResult] = useState<string | null>(null);
 
   const selfies = useQuery({
     queryKey: ["selfies", user.id],
