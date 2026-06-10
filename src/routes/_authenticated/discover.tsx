@@ -69,6 +69,85 @@ function Discover() {
     },
   });
 
+  const clothing = useQuery({
+    queryKey: ["clothing", user.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("uploads")
+        .select("id, storage_path, created_at")
+        .eq("user_id", user.id)
+        .eq("kind", "clothing")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      const withUrls = await Promise.all(
+        (data ?? []).map(async (u) => {
+          const { data: s } = await supabase.storage
+            .from("user-uploads")
+            .createSignedUrl(u.storage_path, 60 * 30);
+          return { ...u, url: s?.signedUrl ?? "" };
+        }),
+      );
+      return withUrls;
+    },
+  });
+
+  async function onClothingUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8MB");
+      e.target.value = "";
+      return;
+    }
+    setUploadingClothing(true);
+    try {
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
+      const path = `${user.id}/clothing-${Date.now()}.${ext}`;
+      const { error } = await supabase.storage.from("user-uploads").upload(path, file, {
+        contentType: file.type,
+      });
+      if (error) throw error;
+      const { data: row, error: insErr } = await supabase
+        .from("uploads")
+        .insert({ user_id: user.id, kind: "clothing", storage_path: path })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+      toast.success("Clothing added.");
+      setCustomClothingIds((ids) => [...ids, row.id]);
+      clothing.refetch();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingClothing(false);
+      e.target.value = "";
+    }
+  }
+
+  async function runCustomTryOn() {
+    if (customClothingIds.length === 0) {
+      toast.error("Add at least one clothing image first.");
+      return;
+    }
+    setCustomLoading(true);
+    setCustomResult(null);
+    try {
+      const res = await customTryOnFn({
+        data: {
+          clothingUploadIds: customClothingIds,
+          selfieUploadId: selfieId || undefined,
+          notes: customNotes || undefined,
+        },
+      });
+      setCustomResult(res.url);
+      toast.success("Your custom try-on is ready.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Try-on failed");
+    } finally {
+      setCustomLoading(false);
+    }
+  }
+
   async function onSelfieUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
