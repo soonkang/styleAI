@@ -35,12 +35,14 @@ function Discover() {
   const { user } = Route.useRouteContext();
   const recFn = useServerFn(recommendOutfits);
   const tryOnFn = useServerFn(generateTryOn);
+  const analyzeFn = useServerFn(analyzeUpload);
 
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
   const [notes, setNotes] = useState("");
   const [selfieId, setSelfieId] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryon, setTryon] = useState<Record<number, { url: string; loading: boolean }>>({});
 
