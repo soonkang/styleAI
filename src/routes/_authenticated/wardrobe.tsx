@@ -8,7 +8,7 @@ import { analyzeUpload, getSignedUploadUrl } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/wardrobe")({
-  head: () => ({ meta: [{ title: "Wardrobe — StyleAI" }] }),
+  head: () => ({ meta: [{ title: "Wardrobe — MyStyle" }] }),
   component: Wardrobe,
 });
 
@@ -75,13 +75,47 @@ function Wardrobe() {
       e.target.value = "";
     }
   }
+  async function deleteUpload(uploadId: string, storagePath: string) {
+  try {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this image?"
+    );
+
+    if (!confirmed) return;
+
+    // Delete image from Supabase Storage
+    const { error: storageError } = await supabase.storage
+      .from("user-uploads")
+      .remove([storagePath]);
+
+    if (storageError) throw storageError;
+
+    // Delete record from uploads table
+    const { error: dbError } = await supabase
+      .from("uploads")
+      .delete()
+      .eq("id", uploadId);
+
+    if (dbError) throw dbError;
+
+    toast.success("Image deleted");
+
+    qc.invalidateQueries({
+      queryKey: ["uploads", user.id],
+    });
+  } catch (err) {
+    toast.error(
+      err instanceof Error ? err.message : "Failed to delete image"
+    );
+  }
+}
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <p className="eyebrow">Wardrobe</p>
       <h1 className="mt-3 text-5xl font-serif">Your visual <em className="text-accent">library</em>.</h1>
       <p className="mt-3 text-muted-foreground max-w-xl">
-        Upload selfies, clothing pieces, or inspiration. StyleAI reads color, fit and styling cues.
+        Upload selfies, clothing pieces, or inspiration. MyStyle reads color, fit and styling cues.
       </p>
 
       <div className="mt-10 flex flex-wrap items-center gap-3">
@@ -120,16 +154,31 @@ function Wardrobe() {
                   {(u.analysis as { text?: string } | null)?.text ? (
                     <ReactMarkdown>{(u.analysis as { text?: string }).text!}</ReactMarkdown>
                   ) : (
-                    <button
-                      onClick={async () => {
-                        toast.message("Analyzing…");
-                        await analyze({ data: { uploadId: u.id } });
-                        qc.invalidateQueries({ queryKey: ["uploads", user.id] });
-                      }}
-                      className="text-sm border border-foreground px-4 py-2 hover:bg-foreground hover:text-background"
-                    >
-                      Analyze with AI
-                    </button>
+                    <div className="flex gap-2">
+  <button
+    onClick={async () => {
+      toast.message("Analyzing…");
+
+      await analyze({
+        data: { uploadId: u.id },
+      });
+
+      qc.invalidateQueries({
+        queryKey: ["uploads", user.id],
+      });
+    }}
+    className="text-sm border border-foreground px-4 py-2 hover:bg-foreground hover:text-background"
+  >
+    Analyze with AI
+  </button>
+
+  <button
+    onClick={() => deleteUpload(u.id, u.storage_path)}
+    className="text-sm border border-red-500 px-4 py-2 text-red-500 hover:bg-red-500 hover:text-white"
+  >
+    Delete
+  </button>
+</div>
                   )}
                 </div>
               </div>

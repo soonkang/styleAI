@@ -13,7 +13,7 @@ export function Nav({ authed }: { authed: boolean }) {
     <header className="sticky top-0 z-40 bg-background/80 backdrop-blur-md border-b border-border">
       <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
         <Link to="/" className="font-serif text-xl tracking-tight">
-          Style<span className="italic text-accent">AI</span>
+          My<span className="italic text-accent">Style</span>
         </Link>
         <nav className="hidden md:flex gap-8 text-sm">
           {authed ? (

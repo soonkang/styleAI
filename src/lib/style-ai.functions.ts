@@ -20,7 +20,7 @@ async function callGateway(path: string, body: unknown) {
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Please top up to keep using StyleAI.");
+    if (res.status === 402) throw new Error("AI credits exhausted. Please top up to keep using MyStyle.");
     throw new Error(`AI gateway error ${res.status}: ${text.slice(0, 200)}`);
   }
   return res.json();
@@ -133,7 +133,7 @@ export const recommendOutfits = createServerFn({ method: "POST" })
       {
         role: "system",
         content:
-          "You are StyleAI, a personal fashion stylist based in Singapore. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. " +
+          "You are MyStyle, a personal fashion stylist based in Singapore. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. " +
           "IMPORTANT CLIMATE CONTEXT: The user is in Singapore — hot (27–33°C), humid (70–90%), with frequent rain and strong sun. Indoor venues (malls, offices, MRT) are heavily air-conditioned and cold. " +
           "Default to lightweight, breathable, sweat-friendly fabrics (linen, cotton, tencel, modal, performance knits). Avoid wool, heavy denim, leather, thick layers, and anything that traps heat. " +
           "Always include at least one practical Singapore touch where relevant: a packable light layer for aircon, breathable footwear, sun/rain consideration, or moisture-wicking fabric. " +

@@ -70,9 +70,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "StyleAI — Your AI fashion stylist" },
+      { title: "MyStyle — Your AI fashion stylist" },
       { name: "description", content: "Upload a selfie, share an occasion, and get tailored outfit recommendations, size guidance, and AI-generated try-ons." },
-      { property: "og:title", content: "StyleAI — Your AI fashion stylist" },
+      { property: "og:title", content: "MyStyle — Your AI fashion stylist" },
       { property: "og:description", content: "Personalized outfits, sizing, and virtual try-on, powered by AI." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

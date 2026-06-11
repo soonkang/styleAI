@@ -78,14 +78,14 @@ function AuthPage() {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-secondary/50 border-r border-border">
-        <Link to="/" className="font-serif text-2xl">Style<span className="italic text-accent">AI</span></Link>
+        <Link to="/" className="font-serif text-2xl">My<span className="italic text-accent">Style</span></Link>
         <div>
           <p className="eyebrow">Members</p>
           <p className="mt-4 font-serif text-4xl leading-tight max-w-md">
             "A wardrobe edited by a stylist who knows you — that is the quiet luxury."
           </p>
         </div>
-        <p className="text-xs text-muted-foreground">© StyleAI Atelier</p>
+        <p className="text-xs text-muted-foreground">© MyStyle Atelier</p>
       </div>
       <div className="flex items-center justify-center p-8">
         <div className="w-full max-w-sm">
@@ -94,16 +94,16 @@ function AuthPage() {
             {mode === "signin" ? "Sign in" : "Create account"}
           </h1>
 
-          <button
+          {/* <button
             onClick={onGoogle}
             disabled={busy}
             className="mt-8 w-full border border-foreground px-4 py-3 text-sm flex items-center justify-center gap-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-50"
           >
             Continue with Google
-          </button>
+          </button> */}
 
           <div className="my-6 flex items-center gap-3 text-xs text-muted-foreground">
-            <div className="hairline flex-1" /> or email <div className="hairline flex-1" />
+            {/* <div className="hairline flex-1" /><div className="hairline flex-1" /> */}
           </div>
 
           <form onSubmit={onEmail} className="space-y-3">
@@ -143,7 +143,7 @@ function AuthPage() {
 
           <p className="mt-6 text-sm text-muted-foreground">
             {mode === "signin" ? "New here?" : "Already a member?"}{" "}
-            <button
+            <button 
               onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
               className="text-foreground border-b border-foreground hover:text-accent hover:border-accent"
             >

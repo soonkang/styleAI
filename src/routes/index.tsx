@@ -6,9 +6,9 @@ import heroImage from "@/assets/hero.jpg";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "StyleAI — Your personal AI stylist" },
+      { title: "MyStyle — Your personal AI stylist" },
       { name: "description", content: "Upload a selfie, share an occasion, and get tailored outfits, sizing guidance, and AI-generated try-ons." },
-      { property: "og:title", content: "StyleAI — Your personal AI stylist" },
+      { property: "og:title", content: "MyStyle — Your personal AI stylist" },
       { property: "og:description", content: "Upload a selfie, share an occasion, and get tailored outfits, sizing guidance, and AI-generated try-ons." },
       { property: "og:image", content: heroImage },
       { name: "twitter:image", content: heroImage },
@@ -33,7 +33,7 @@ function Landing() {
               <em className="text-accent">intention.</em>
             </h1>
             <p className="mt-8 text-lg text-muted-foreground max-w-md leading-relaxed">
-              StyleAI studies your features, your measurements, and the moment —
+              MyStyle studies your features, your measurements, and the moment —
               then composes outfits that feel unmistakably yours.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-4">
@@ -124,8 +124,8 @@ function Landing() {
 
       <footer className="border-t border-border">
         <div className="mx-auto max-w-7xl px-6 py-10 flex flex-wrap justify-between items-center gap-4">
-          <p className="font-serif text-lg">Style<span className="italic text-accent">AI</span></p>
-          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} StyleAI. An editorial study in fit.</p>
+          <p className="font-serif text-lg">My<span className="italic text-accent">Style</span></p>
+          <p className="text-xs text-muted-foreground">© {new Date().getFullYear()} MyStyle. An editorial study in fit.</p>
         </div>
       </footer>
     </div>

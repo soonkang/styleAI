@@ -5,7 +5,7 @@ import { recommendSize, type Gender } from "@/lib/size";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/profile")({
-  head: () => ({ meta: [{ title: "Profile — StyleAI" }] }),
+  head: () => ({ meta: [{ title: "Profile — MyStyle" }] }),
   component: ProfilePage,
 });
 
@@ -87,7 +87,7 @@ function ProfilePage() {
     <div className="mx-auto max-w-3xl px-6 py-12">
       <p className="eyebrow">Profile</p>
       <h1 className="mt-3 text-5xl font-serif">Your <em className="text-accent">measurements</em>.</h1>
-      <p className="mt-3 text-muted-foreground">The more StyleAI knows, the sharper the brief.</p>
+      <p className="mt-3 text-muted-foreground">The more MyStyle knows, the sharper the brief.</p>
 
       <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
         <Field label="Full name">
