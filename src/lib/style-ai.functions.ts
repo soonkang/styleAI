@@ -162,7 +162,6 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     const result = await callGateway("/chat/completions", {
       model: TEXT_MODEL,
       messages,
-      response_format: { type: "json_object" },
     });
 
     const content: string = result?.choices?.[0]?.message?.content ?? "{}";
