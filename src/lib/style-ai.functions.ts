@@ -2,13 +2,13 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const GATEWAY = "https://ai.gateway.lovable.dev/v1";
-const TEXT_MODEL = "google/gemini-2.5-flash";
-const IMAGE_MODEL = "google/gemini-2.5-flash-image";
+const GATEWAY = "https://api.reka.ai/v1";
+const TEXT_MODEL = "reka-flash";
+const IMAGE_MODEL = "reka-flash"; // Note: Reka does not currently generate images; try-on image features will error.
 
 async function callGateway(path: string, body: unknown) {
-  const key = process.env.LOVABLE_API_KEY;
-  if (!key) throw new Error("Missing LOVABLE_API_KEY");
+  const key = process.env.REKA_API_KEY;
+  if (!key) throw new Error("Missing REKA_API_KEY");
   const res = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
     headers: {
@@ -20,8 +20,8 @@ async function callGateway(path: string, body: unknown) {
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
-    if (res.status === 402) throw new Error("AI credits exhausted. Please top up to keep using MyStyle.");
-    throw new Error(`AI gateway error ${res.status}: ${text.slice(0, 200)}`);
+    if (res.status === 401) throw new Error("Reka API key is invalid or unauthorized.");
+    throw new Error(`Reka AI error ${res.status}: ${text.slice(0, 200)}`);
   }
   return res.json();
 }
