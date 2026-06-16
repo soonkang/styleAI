@@ -88,6 +88,13 @@ function getGeminiApiKey() {
 
 async function callRekaChat(path: string, body: unknown) {
   const res = await fetchWithRetry(`${REKA_API}${path}`, {
+const GATEWAY = "https://api.reka.ai/v1";
+const TEXT_MODEL = "reka-flash";
+
+async function callGateway(path: string, body: unknown) {
+  const key = process.env.REKA_API_KEY;
+  if (!key) throw new Error("Missing REKA_API_KEY");
+  const res = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
     headers: {
       "X-Api-Key": getRekaApiKey(),
@@ -101,6 +108,8 @@ async function callRekaChat(path: string, body: unknown) {
     if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
     if (res.status === 401) throw new Error("Invalid Reka API key. Check that REKA_API_KEY is set correctly.");
     throw new Error(`Reka API error ${res.status}: ${text.slice(0, 200)}`);
+    if (res.status === 401) throw new Error("Reka API key is invalid or unauthorized.");
+    throw new Error(`Reka AI error ${res.status}: ${text.slice(0, 200)}`);
   }
 
   return res.json();
@@ -474,3 +483,6 @@ export const customTryOn = createServerFn({ method: "POST" })
     const { data: signed } = await context.supabase.storage.from("tryons").createSignedUrl(path, 60 * 60);
     return { url: signed?.signedUrl ?? "", path };
   });
+// Image-based try-on removed: Reka AI does not provide an image generation
+// model. Outfit recommendations stay text-only and link out to shop search.
+
