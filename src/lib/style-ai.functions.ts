@@ -4,7 +4,6 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const GATEWAY = "https://api.reka.ai/v1";
 const TEXT_MODEL = "reka-flash";
-const IMAGE_MODEL = "reka-flash"; // Note: Reka does not currently generate images; try-on image features will error.
 
 async function callGateway(path: string, body: unknown) {
   const key = process.env.REKA_API_KEY;
