@@ -2,6 +2,92 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+const REKA_API = "https://api.reka.ai/v1";
+const TEXT_MODEL = "reka-flash";
+const GEMINI_API = "https://generativelanguage.googleapis.com";
+const IMAGE_MODEL = "gemini-3.1-flash-image";
+
+function getRekaApiKey() {
+  const key = process.env.REKA_API_KEY;
+  if (!key) throw new Error("Missing REKA_API_KEY");
+  return key;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit, attempts = 3) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await fetch(input, init);
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) await delay(1000 * (attempt + 1));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("fetch failed");
+}
+
+function extractImageUrl(value: unknown): string | undefined {
+  if (typeof value === "string") {
+    if (value.startsWith("data:image/") || value.startsWith("http://") || value.startsWith("https://")) {
+      return value;
+    }
+    return undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = extractImageUrl(item);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  if (!value || typeof value !== "object") return undefined;
+
+  const record = value as Record<string, unknown>;
+  for (const key of ["imageUrl", "image_url", "url", "output", "result", "image", "images", "data"]) {
+    const found = extractImageUrl(record[key]);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+async function readImageBytes(imageUrl: string) {
+  if (imageUrl.startsWith("data:")) {
+    const match = imageUrl.match(/^data:(image\/[\w.+-]+);base64,(.+)$/);
+    if (!match) throw new Error("Unexpected image format");
+    const mime = match[1];
+    const ext = mime.split("/")[1] || "png";
+    return { bytes: Buffer.from(match[2], "base64"), mime, ext };
+  }
+
+  const res = await fetchWithRetry(imageUrl);
+  if (!res.ok) throw new Error(`Could not download generated image (${res.status})`);
+  const mime = res.headers.get("content-type") || "image/png";
+  const ext = mime.split("/")[1] || "png";
+  return { bytes: Buffer.from(await res.arrayBuffer()), mime, ext };
+}
+
+function getImageExtension(sourceUrl: string, mime: string) {
+  try {
+    const extFromUrl = new URL(sourceUrl).pathname.split(".").pop();
+    if (extFromUrl && extFromUrl.length <= 5) return extFromUrl;
+  } catch {
+    // Ignore URL parsing failures and fall back to mime-based detection.
+  }
+  return mime.split("/")[1] || "png";
+}
+
+function getGeminiApiKey() {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!key) throw new Error("Missing Gemini API key. Set GEMINI_API_KEY or GOOGLE_API_KEY.");
+  return key;
+}
+
+async function callRekaChat(path: string, body: unknown) {
+  const res = await fetchWithRetry(`${REKA_API}${path}`, {
 const GATEWAY = "https://api.reka.ai/v1";
 const TEXT_MODEL = "reka-flash";
 
@@ -11,23 +97,69 @@ async function callGateway(path: string, body: unknown) {
   const res = await fetch(`${GATEWAY}${path}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      "X-Api-Key": getRekaApiKey(),
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   });
+
   if (!res.ok) {
     const text = await res.text();
     if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
+    if (res.status === 401) throw new Error("Invalid Reka API key. Check that REKA_API_KEY is set correctly.");
+    throw new Error(`Reka API error ${res.status}: ${text.slice(0, 200)}`);
     if (res.status === 401) throw new Error("Reka API key is invalid or unauthorized.");
     throw new Error(`Reka AI error ${res.status}: ${text.slice(0, 200)}`);
   }
+
   return res.json();
 }
 
-// ─────────────────────────────────────────────────────────────
-// Sign URL for a private storage object (so the AI can fetch it).
-// ─────────────────────────────────────────────────────────────
+async function callGeminiImage(prompt: string, referenceImageUrls: string[]) {
+  const key = getGeminiApiKey();
+  const referenceParts = await Promise.all(
+    referenceImageUrls.map(async (imageUrl) => {
+      const { bytes, mime } = await readImageBytes(imageUrl);
+      return {
+        inlineData: {
+          mimeType: mime,
+          data: Buffer.from(bytes).toString("base64"),
+        },
+      };
+    }),
+  );
+
+  const res = await fetchWithRetry(`${GEMINI_API}/v1beta/models/${IMAGE_MODEL}:generateContent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": key,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [{ text: prompt }, ...referenceParts],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("Rate limit reached. Please wait a moment and try again.");
+    if (res.status === 401) throw new Error("Invalid Gemini API key. Check that GEMINI_API_KEY is set correctly.");
+    throw new Error(`Gemini image API error ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const payload = await res.json();
+  const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> = payload?.candidates?.[0]?.content?.parts ?? [];
+  const inline = parts.find((part) => typeof part?.inlineData?.data === "string" && part.inlineData.data);
+  if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
+  const mime = inline.inlineData.mimeType || "image/png";
+  const ext = getImageExtension("generated.png", mime);
+  return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext };
+}
+
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ bucket: z.string(), path: z.string() }).parse(d))
@@ -39,9 +171,6 @@ export const getSignedUploadUrl = createServerFn({ method: "POST" })
     return { url: signed.signedUrl };
   });
 
-// ─────────────────────────────────────────────────────────────
-// Analyze an uploaded image (selfie / clothing / inspiration).
-// ─────────────────────────────────────────────────────────────
 export const analyzeUpload = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -63,7 +192,7 @@ export const analyzeUpload = createServerFn({ method: "POST" })
     if (!signed) throw new Error("Could not sign image");
 
     const sgContext =
-      " Tailor all suggestions to Singapore's tropical climate (hot 27–33°C, humid, frequent rain, strong sun, cold aircon indoors): prioritise lightweight breathable fabrics (linen, cotton, tencel, modal), and mention a packable aircon layer or sun/rain consideration where useful.";
+      " Tailor all suggestions to Singapore's tropical climate (hot 27-33C, humid, frequent rain, strong sun, cold aircon indoors): prioritise lightweight breathable fabrics (linen, cotton, tencel, modal), and mention a packable aircon layer or sun/rain consideration where useful.";
     const system =
       row.kind === "selfie"
         ? "You are a fashion stylist. Analyze the person's appearance: skin undertone (warm/cool/neutral), hair, eye color, body shape, and the colors and styles that would flatter them. Be concise and respectful." + sgContext
@@ -71,7 +200,7 @@ export const analyzeUpload = createServerFn({ method: "POST" })
           ? "You are a fashion stylist. Analyze this clothing item: type, color(s), material guess, formality, breathability for hot/humid weather, and 3 Singapore-appropriate outfit pairings it would work with." + sgContext
           : "You are a fashion stylist. Analyze this inspiration photo: aesthetic, dominant colors, key pieces, and how to recreate the look for Singapore weather at varying price points." + sgContext;
 
-    const result = await callGateway("/chat/completions", {
+    const result = await callRekaChat("/chat/completions", {
       model: TEXT_MODEL,
       messages: [
         { role: "system", content: system },
@@ -86,16 +215,10 @@ export const analyzeUpload = createServerFn({ method: "POST" })
     });
 
     const text: string = result?.choices?.[0]?.message?.content ?? "";
-    await context.supabase
-      .from("uploads")
-      .update({ analysis: { text, model: TEXT_MODEL } })
-      .eq("id", row.id);
+    await context.supabase.from("uploads").update({ analysis: { text, model: TEXT_MODEL } }).eq("id", row.id);
     return { analysis: text };
   });
 
-// ─────────────────────────────────────────────────────────────
-// Recommend outfits for an occasion / category.
-// ─────────────────────────────────────────────────────────────
 export const recommendOutfits = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
@@ -133,11 +256,11 @@ export const recommendOutfits = createServerFn({ method: "POST" })
         role: "system",
         content:
           "You are MyStyle, a personal fashion stylist based in Singapore. Recommend 3 distinct outfits tailored to the user's occasion, body, and preferences. " +
-          "IMPORTANT CLIMATE CONTEXT: The user is in Singapore — hot (27–33°C), humid (70–90%), with frequent rain and strong sun. Indoor venues (malls, offices, MRT) are heavily air-conditioned and cold. " +
+          "IMPORTANT CLIMATE CONTEXT: The user is in Singapore - hot (27-33C), humid (70-90%), with frequent rain and strong sun. Indoor venues (malls, offices, MRT) are heavily air-conditioned and cold. " +
           "Default to lightweight, breathable, sweat-friendly fabrics (linen, cotton, tencel, modal, performance knits). Avoid wool, heavy denim, leather, thick layers, and anything that traps heat. " +
           "Always include at least one practical Singapore touch where relevant: a packable light layer for aircon, breathable footwear, sun/rain consideration, or moisture-wicking fabric. " +
           "Reference Singapore-accessible retailers in search_query when sensible (Uniqlo, Zara, Cotton On, Love Bonito, Charles & Keith, Pedro, Lazada, Shopee, Zalora). " +
-          "Always respond with VALID JSON only — no prose, no markdown fences — matching this schema:\n" +
+          "Always respond with VALID JSON only - no prose, no markdown fences - matching this schema:\n" +
           `{"outfits":[{"name":string,"summary":string,"items":[{"category":string,"description":string,"color":string,"search_query":string}],"why_it_works":string,"styling_tips":[string]}]}\n` +
           "search_query should be a short phrase a user can paste into Google Shopping, Zalora, or Lazada to find that piece.",
       },
@@ -151,14 +274,14 @@ export const recommendOutfits = createServerFn({ method: "POST" })
               (data.category ? `Category preference: ${data.category}\n` : "") +
               (data.notes ? `Additional notes: ${data.notes}\n` : "") +
               `\nProfile: ${JSON.stringify(profile ?? {})}\n` +
-              (selfieUrl ? "A selfie of the user is attached — use their visible coloring." : ""),
+              (selfieUrl ? "A selfie of the user is attached - use their visible coloring." : ""),
           },
           ...(selfieUrl ? [{ type: "image_url", image_url: { url: selfieUrl } }] : []),
         ],
       },
     ];
 
-    const result = await callGateway("/chat/completions", {
+    const result = await callRekaChat("/chat/completions", {
       model: TEXT_MODEL,
       messages,
     });
@@ -172,12 +295,13 @@ export const recommendOutfits = createServerFn({ method: "POST" })
       why_it_works: string;
       styling_tips: string[];
     };
+
     let parsed: { outfits: Outfit[] };
     try {
       parsed = JSON.parse(content);
     } catch {
-      const m = content.match(/\{[\s\S]*\}/);
-      parsed = m ? JSON.parse(m[0]) : { outfits: [] };
+      const match = content.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : { outfits: [] };
     }
     if (!Array.isArray(parsed.outfits)) parsed.outfits = [];
 
@@ -197,6 +321,168 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     return { id: saved.id, outfits: parsed.outfits };
   });
 
+export const generateTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      recommendationId: z.string().uuid(),
+      outfitIndex: z.number().int().min(0).max(10),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: rec, error } = await context.supabase
+      .from("recommendations")
+      .select("id, outfits, occasion, selfie_upload_id")
+      .eq("id", data.recommendationId)
+      .single();
+    if (error || !rec) throw new Error("Recommendation not found");
+
+    const outfits = (rec.outfits as { outfits?: unknown[] })?.outfits ?? [];
+    const outfit = outfits[data.outfitIndex] as
+      | { name?: string; summary?: string; items?: Array<{ description?: string; color?: string }> }
+      | undefined;
+    if (!outfit) throw new Error("Outfit not found");
+
+    const itemsText = outfit.items?.map((item) => `${item.color ?? ""} ${item.description ?? ""}`.trim()).join(", ") ?? "";
+
+    let selfieUrl: string | null = null;
+    if (rec.selfie_upload_id) {
+      const { data: up } = await context.supabase
+        .from("uploads")
+        .select("storage_path")
+        .eq("id", rec.selfie_upload_id)
+        .single();
+      if (up) {
+        const { data: signed } = await context.supabase.storage
+          .from("user-uploads")
+          .createSignedUrl(up.storage_path, 60 * 10);
+        selfieUrl = signed?.signedUrl ?? null;
+      }
+    }
+
+    const prompt =
+      `Editorial full-body fashion photograph, soft natural light, neutral studio backdrop. ` +
+      `Outfit: ${outfit.name ?? ""}. ${outfit.summary ?? ""}. ` +
+      `Pieces: ${itemsText}. ` +
+      `Occasion: ${rec.occasion}. ` +
+      (selfieUrl
+        ? "Use the attached person's face, hair, and skin tone faithfully. "
+        : "Anonymous model with neutral pose.");
+
+    const imgResult = await callGeminiImage(prompt, selfieUrl ? [selfieUrl] : []);
+    const { bytes, mime, ext } = imgResult;
+    const path = `${context.userId}/${rec.id}-${data.outfitIndex}-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    await context.supabase.from("recommendations").update({ tryon_image_path: path }).eq("id", rec.id);
+
+    const { data: signed } = await context.supabase.storage.from("tryons").createSignedUrl(path, 60 * 60);
+    return { url: signed?.signedUrl ?? "", path };
+  });
+
+export const customTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      clothingUploadIds: z.array(z.string().uuid()).min(1).max(4),
+      selfieUploadId: z.string().uuid().optional(),
+      notes: z.string().max(300).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    async function signUpload(id: string) {
+      const { data: up } = await context.supabase
+        .from("uploads")
+        .select("storage_path")
+        .eq("id", id)
+        .single();
+      if (!up) return null;
+      const { data: signed } = await context.supabase.storage
+        .from("user-uploads")
+        .createSignedUrl(up.storage_path, 60 * 10);
+      return signed?.signedUrl ?? null;
+    }
+
+    const clothingUrls = (await Promise.all(data.clothingUploadIds.map(signUpload))).filter(
+      (url): url is string => !!url,
+    );
+    if (clothingUrls.length === 0) throw new Error("No clothing images found");
+
+    const selfieUrl = data.selfieUploadId ? await signUpload(data.selfieUploadId) : null;
+
+    const clothingDescriptions = await callRekaChat("/chat/completions", {
+      model: TEXT_MODEL,
+      messages: [
+        {
+          role: "system",
+          content: "You describe clothing for a fashion image generator. Return concise factual descriptions only.",
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                "Describe each attached clothing image in order, one sentence per image, focusing on color, silhouette, texture, and notable details.",
+            },
+            ...clothingUrls.map((url) => ({ type: "image_url", image_url: { url } })),
+          ],
+        },
+      ],
+    });
+
+    const clothingText = clothingDescriptions?.choices?.[0]?.message?.content ?? "";
+
+    const selfieDescription = selfieUrl
+      ? await callRekaChat("/chat/completions", {
+          model: TEXT_MODEL,
+          messages: [
+            {
+              role: "system",
+              content: "You describe a person for a fashion image generator. Return concise factual details only.",
+            },
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Describe this person's visible coloring, hair, and overall presentation in one short paragraph for fashion rendering.",
+                },
+                { type: "image_url", image_url: { url: selfieUrl } },
+              ],
+            },
+          ],
+        })
+      : null;
+
+    const prompt =
+      `Editorial full-body fashion photograph, soft natural light, neutral studio backdrop, Singapore styling. ` +
+      `Dress the subject in the clothing described below as faithfully as possible. ` +
+      `Clothing: ${clothingText}. ` +
+      (selfieDescription?.choices?.[0]?.message?.content
+        ? `Subject: ${selfieDescription.choices[0].message.content}. `
+        : selfieUrl
+          ? "Use the attached person's face, hair, skin tone and body shape faithfully. "
+          : "Use a neutral anonymous model with a relaxed pose. ") +
+      (data.notes ? `Additional notes: ${data.notes}.` : "");
+
+    const imgResult = await callGeminiImage(prompt, [selfieUrl, ...clothingUrls].filter(Boolean) as string[]);
+    const { bytes, mime, ext } = imgResult;
+    const path = `${context.userId}/custom-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: signed } = await context.supabase.storage.from("tryons").createSignedUrl(path, 60 * 60);
+    return { url: signed?.signedUrl ?? "", path };
+  });
 // Image-based try-on removed: Reka AI does not provide an image generation
 // model. Outfit recommendations stay text-only and link out to shop search.
 
