@@ -4,8 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const REKA_API = "https://api.reka.ai/v1";
 const TEXT_MODEL = "reka-flash";
-const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
-const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
+const LOVABLE_AI_API = "https://ai.gateway.lovable.dev/v1";
+const GEMINI_IMAGE_MODEL = "google/gemini-2.5-flash-image";
 
 function getRekaApiKey() {
   const key = process.env.REKA_API_KEY;
