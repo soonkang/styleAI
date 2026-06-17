@@ -236,3 +236,71 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { id: saved.id, outfits: parsed.outfits };
   });
+
+export const generateTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      recommendationId: z.string().uuid(),
+      outfitIndex: z.number().int().min(0).max(10),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: rec, error } = await context.supabase
+      .from("recommendations")
+      .select("id, outfits, occasion, selfie_upload_id")
+      .eq("id", data.recommendationId)
+      .single();
+    if (error || !rec) throw new Error("Recommendation not found");
+
+    const outfits = (rec.outfits as { outfits?: unknown[] })?.outfits ?? [];
+    const outfit = outfits[data.outfitIndex] as
+      | { name?: string; summary?: string; items?: Array<{ description?: string; color?: string }> }
+      | undefined;
+    if (!outfit) throw new Error("Outfit not found");
+
+    const itemsText =
+      outfit.items?.map((i) => `${i.color ?? ""} ${i.description ?? ""}`.trim()).join(", ") ?? "";
+
+    let selfieUrl: string | null = null;
+    if (rec.selfie_upload_id) {
+      const { data: up } = await context.supabase
+        .from("uploads")
+        .select("storage_path")
+        .eq("id", rec.selfie_upload_id)
+        .single();
+      if (up) {
+        const { data: signed } = await context.supabase.storage
+          .from("user-uploads")
+          .createSignedUrl(up.storage_path, 60 * 10);
+        selfieUrl = signed?.signedUrl ?? null;
+      }
+    }
+
+    const prompt =
+      `Editorial full-body fashion photograph, soft natural light, neutral studio backdrop. ` +
+      `A model wearing this outfit: ${outfit.name ?? ""}. ${outfit.summary ?? ""}. ` +
+      `Pieces: ${itemsText}. Occasion: ${rec.occasion}. ` +
+      (selfieUrl
+        ? "Use the attached person's face, hair, skin tone, and body shape faithfully."
+        : "Anonymous model with relaxed pose, suitable for Singapore tropical climate.");
+
+    const { bytes, mime, ext } = await generateGeminiImage(prompt, selfieUrl ? [selfieUrl] : []);
+    const path = `${context.userId}/${rec.id}-${data.outfitIndex}-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    await context.supabase
+      .from("recommendations")
+      .update({ tryon_image_path: path })
+      .eq("id", rec.id);
+
+    const { data: signed } = await context.supabase.storage
+      .from("tryons")
+      .createSignedUrl(path, 60 * 60);
+    return { url: signed?.signedUrl ?? "", path };
+  });
+
