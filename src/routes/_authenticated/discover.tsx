@@ -35,6 +35,7 @@ function Discover() {
   const { user } = Route.useRouteContext();
   const recFn = useServerFn(recommendOutfits);
   const analyzeFn = useServerFn(analyzeUpload);
+  const tryOnFn = useServerFn(generateTryOn);
 
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
@@ -43,6 +44,22 @@ function Discover() {
   const [loading, setLoading] = useState(false);
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
+  const [tryOnImages, setTryOnImages] = useState<Record<number, string>>({});
+  const [tryOnLoading, setTryOnLoading] = useState<Record<number, boolean>>({});
+
+  async function visualize(index: number) {
+    if (!result) return;
+    setTryOnLoading((s) => ({ ...s, [index]: true }));
+    try {
+      const res = await tryOnFn({ data: { recommendationId: result.id, outfitIndex: index } });
+      setTryOnImages((s) => ({ ...s, [index]: res.url }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not generate visual");
+    } finally {
+      setTryOnLoading((s) => ({ ...s, [index]: false }));
+    }
+  }
+
 
   const selfies = useQuery({
     queryKey: ["selfies", user.id],
