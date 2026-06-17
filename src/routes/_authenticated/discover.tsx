@@ -230,6 +230,21 @@ function Discover() {
               <h2 className="mt-2 text-4xl font-serif">{o.name}</h2>
               <p className="mt-4 text-muted-foreground">{o.summary}</p>
 
+              {tryOnImages[i] && (
+                <img
+                  src={tryOnImages[i]}
+                  alt={`Visualization of ${o.name}`}
+                  className="mt-6 w-full max-w-md border border-border"
+                />
+              )}
+              <button
+                onClick={() => visualize(i)}
+                disabled={tryOnLoading[i]}
+                className="mt-4 text-xs tracking-widest uppercase border border-foreground px-4 py-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-50"
+              >
+                {tryOnLoading[i] ? "Rendering…" : tryOnImages[i] ? "Regenerate visual" : "Visualize this look"}
+              </button>
+
               <h3 className="mt-8 eyebrow">The pieces</h3>
               <ul className="mt-3 divide-y divide-border border-y border-border">
                 {o.items?.map((it, j) => (
