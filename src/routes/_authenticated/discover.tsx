@@ -46,14 +46,17 @@ function Discover() {
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryOnImages, setTryOnImages] = useState<Record<number, string>>({});
   const [tryOnLoading, setTryOnLoading] = useState<Record<number, boolean>>({});
+  const [tryOnCooldownUntil, setTryOnCooldownUntil] = useState<number>(0);
   const tryOnBusy = Object.values(tryOnLoading).some(Boolean);
+  const tryOnCoolingDown = Date.now() < tryOnCooldownUntil;
 
   async function visualize(index: number) {
-    if (!result || tryOnBusy) return;
+    if (!result || tryOnBusy || tryOnCoolingDown) return;
     setTryOnLoading((s) => ({ ...s, [index]: true }));
     try {
       const res = await tryOnFn({ data: { recommendationId: result.id, outfitIndex: index } });
       if (!res.ok) {
+        setTryOnCooldownUntil(Date.now() + (res.retryAfterSeconds ?? 60) * 1000);
         toast.error(res.error);
         return;
       }
@@ -244,10 +247,16 @@ function Discover() {
               )}
               <button
                 onClick={() => visualize(i)}
-                disabled={tryOnLoading[i] || tryOnBusy}
+                disabled={tryOnLoading[i] || tryOnBusy || tryOnCoolingDown}
                 className="mt-4 text-xs tracking-widest uppercase border border-foreground px-4 py-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-50"
               >
-                {tryOnLoading[i] ? "Rendering…" : tryOnImages[i] ? "Regenerate visual" : "Visualize this look"}
+                {tryOnLoading[i]
+                  ? "Rendering…"
+                  : tryOnCoolingDown
+                    ? "Try again in 1 minute"
+                    : tryOnImages[i]
+                      ? "Regenerate visual"
+                      : "Visualize this look"}
               </button>
 
               <h3 className="mt-8 eyebrow">The pieces</h3>
