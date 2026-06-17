@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { recommendOutfits, analyzeUpload } from "@/lib/style-ai.functions";
+import { recommendOutfits, analyzeUpload, generateTryOn } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/discover")({
@@ -35,6 +35,7 @@ function Discover() {
   const { user } = Route.useRouteContext();
   const recFn = useServerFn(recommendOutfits);
   const analyzeFn = useServerFn(analyzeUpload);
+  const tryOnFn = useServerFn(generateTryOn);
 
   const [occasion, setOccasion] = useState(OCCASIONS[0]);
   const [category, setCategory] = useState("Any");
@@ -43,6 +44,22 @@ function Discover() {
   const [loading, setLoading] = useState(false);
   const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
+  const [tryOnImages, setTryOnImages] = useState<Record<number, string>>({});
+  const [tryOnLoading, setTryOnLoading] = useState<Record<number, boolean>>({});
+
+  async function visualize(index: number) {
+    if (!result) return;
+    setTryOnLoading((s) => ({ ...s, [index]: true }));
+    try {
+      const res = await tryOnFn({ data: { recommendationId: result.id, outfitIndex: index } });
+      setTryOnImages((s) => ({ ...s, [index]: res.url }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not generate visual");
+    } finally {
+      setTryOnLoading((s) => ({ ...s, [index]: false }));
+    }
+  }
+
 
   const selfies = useQuery({
     queryKey: ["selfies", user.id],
@@ -212,6 +229,21 @@ function Discover() {
               <p className="eyebrow">Look Nº0{i + 1}</p>
               <h2 className="mt-2 text-4xl font-serif">{o.name}</h2>
               <p className="mt-4 text-muted-foreground">{o.summary}</p>
+
+              {tryOnImages[i] && (
+                <img
+                  src={tryOnImages[i]}
+                  alt={`Visualization of ${o.name}`}
+                  className="mt-6 w-full max-w-md border border-border"
+                />
+              )}
+              <button
+                onClick={() => visualize(i)}
+                disabled={tryOnLoading[i]}
+                className="mt-4 text-xs tracking-widest uppercase border border-foreground px-4 py-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-50"
+              >
+                {tryOnLoading[i] ? "Rendering…" : tryOnImages[i] ? "Regenerate visual" : "Visualize this look"}
+              </button>
 
               <h3 className="mt-8 eyebrow">The pieces</h3>
               <ul className="mt-3 divide-y divide-border border-y border-border">

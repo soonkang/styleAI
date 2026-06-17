@@ -4,10 +4,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const REKA_API = "https://api.reka.ai/v1";
 const TEXT_MODEL = "reka-flash";
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 
 function getRekaApiKey() {
   const key = process.env.REKA_API_KEY;
   if (!key) throw new Error("Missing REKA_API_KEY");
+  return key;
+}
+
+function getGeminiApiKey() {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) throw new Error("Missing GEMINI_API_KEY");
   return key;
 }
 
@@ -30,6 +38,43 @@ async function callRekaChat(path: string, body: unknown) {
 
   return res.json();
 }
+
+async function fetchImageAsInlineData(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not fetch reference image (${res.status})`);
+  const mime = res.headers.get("content-type") || "image/jpeg";
+  const buf = Buffer.from(await res.arrayBuffer());
+  return { inlineData: { mimeType: mime, data: buf.toString("base64") } };
+}
+
+async function generateGeminiImage(prompt: string, referenceUrls: string[]) {
+  const key = getGeminiApiKey();
+  const refParts = await Promise.all(referenceUrls.map(fetchImageAsInlineData));
+  const res = await fetch(
+    `${GEMINI_API}/models/${GEMINI_IMAGE_MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }, ...refParts] }],
+      }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("Gemini rate limit. Please wait a moment.");
+    if (res.status === 401 || res.status === 403) throw new Error("Invalid GEMINI_API_KEY.");
+    throw new Error(`Gemini error ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const payload = await res.json();
+  const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> =
+    payload?.candidates?.[0]?.content?.parts ?? [];
+  const inline = parts.find((p) => p?.inlineData?.data);
+  if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
+  const mime = inline.inlineData.mimeType || "image/png";
+  return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext: (mime.split("/")[1] || "png") };
+}
+
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -191,3 +236,71 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { id: saved.id, outfits: parsed.outfits };
   });
+
+export const generateTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      recommendationId: z.string().uuid(),
+      outfitIndex: z.number().int().min(0).max(10),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: rec, error } = await context.supabase
+      .from("recommendations")
+      .select("id, outfits, occasion, selfie_upload_id")
+      .eq("id", data.recommendationId)
+      .single();
+    if (error || !rec) throw new Error("Recommendation not found");
+
+    const outfits = (rec.outfits as { outfits?: unknown[] })?.outfits ?? [];
+    const outfit = outfits[data.outfitIndex] as
+      | { name?: string; summary?: string; items?: Array<{ description?: string; color?: string }> }
+      | undefined;
+    if (!outfit) throw new Error("Outfit not found");
+
+    const itemsText =
+      outfit.items?.map((i) => `${i.color ?? ""} ${i.description ?? ""}`.trim()).join(", ") ?? "";
+
+    let selfieUrl: string | null = null;
+    if (rec.selfie_upload_id) {
+      const { data: up } = await context.supabase
+        .from("uploads")
+        .select("storage_path")
+        .eq("id", rec.selfie_upload_id)
+        .single();
+      if (up) {
+        const { data: signed } = await context.supabase.storage
+          .from("user-uploads")
+          .createSignedUrl(up.storage_path, 60 * 10);
+        selfieUrl = signed?.signedUrl ?? null;
+      }
+    }
+
+    const prompt =
+      `Editorial full-body fashion photograph, soft natural light, neutral studio backdrop. ` +
+      `A model wearing this outfit: ${outfit.name ?? ""}. ${outfit.summary ?? ""}. ` +
+      `Pieces: ${itemsText}. Occasion: ${rec.occasion}. ` +
+      (selfieUrl
+        ? "Use the attached person's face, hair, skin tone, and body shape faithfully."
+        : "Anonymous model with relaxed pose, suitable for Singapore tropical climate.");
+
+    const { bytes, mime, ext } = await generateGeminiImage(prompt, selfieUrl ? [selfieUrl] : []);
+    const path = `${context.userId}/${rec.id}-${data.outfitIndex}-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    await context.supabase
+      .from("recommendations")
+      .update({ tryon_image_path: path })
+      .eq("id", rec.id);
+
+    const { data: signed } = await context.supabase.storage
+      .from("tryons")
+      .createSignedUrl(path, 60 * 60);
+    return { url: signed?.signedUrl ?? "", path };
+  });
+
