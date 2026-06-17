@@ -13,9 +13,9 @@ function getRekaApiKey() {
   return key;
 }
 
-function getGeminiApiKey() {
-  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!key) throw new Error("Missing GEMINI_API_KEY");
+function getLovableApiKey() {
+  const key = process.env.LOVABLE_API_KEY;
+  if (!key) throw new Error("Missing LOVABLE_API_KEY");
   return key;
 }
 
