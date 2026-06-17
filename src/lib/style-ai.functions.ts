@@ -86,6 +86,14 @@ async function generateGeminiImage(prompt: string, referenceUrls: string[]) {
   );
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Something went wrong";
+}
+
+function isRecoverableGeminiError(message: string) {
+  return /gemini|rate.?limit|429|api key/i.test(message);
+}
+
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -296,7 +304,17 @@ export const generateTryOn = createServerFn({ method: "POST" })
         ? "Use the attached person's face, hair, skin tone, and body shape faithfully."
         : "Anonymous model with relaxed pose, suitable for Singapore tropical climate.");
 
-    const { bytes, mime, ext } = await generateGeminiImage(prompt, selfieUrl ? [selfieUrl] : []);
+    let generated: Awaited<ReturnType<typeof generateGeminiImage>>;
+    try {
+      generated = await generateGeminiImage(prompt, selfieUrl ? [selfieUrl] : []);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      if (isRecoverableGeminiError(message)) {
+        return { ok: false as const, error: message, retryAfterSeconds: 60 };
+      }
+      throw error;
+    }
+    const { bytes, mime, ext } = generated;
     const path = `${context.userId}/${rec.id}-${data.outfitIndex}-${Date.now()}.${ext}`;
 
     const { error: upErr } = await context.supabase.storage
@@ -312,6 +330,6 @@ export const generateTryOn = createServerFn({ method: "POST" })
     const { data: signed } = await context.supabase.storage
       .from("tryons")
       .createSignedUrl(path, 60 * 60);
-    return { url: signed?.signedUrl ?? "", path };
+    return { ok: true as const, url: signed?.signedUrl ?? "", path };
   });
 
