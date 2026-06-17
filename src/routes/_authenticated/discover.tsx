@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { recommendOutfits, analyzeUpload } from "@/lib/style-ai.functions";
+import { recommendOutfits, analyzeUpload, generateTryOn } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/discover")({
