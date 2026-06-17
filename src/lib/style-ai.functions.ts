@@ -50,29 +50,40 @@ async function fetchImageAsInlineData(url: string) {
 async function generateGeminiImage(prompt: string, referenceUrls: string[]) {
   const key = getGeminiApiKey();
   const refParts = await Promise.all(referenceUrls.map(fetchImageAsInlineData));
-  const res = await fetch(
-    `${GEMINI_API}/models/${GEMINI_IMAGE_MODEL}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }, ...refParts] }],
-      }),
-    },
-  );
-  if (!res.ok) {
-    const text = await res.text();
-    if (res.status === 429) throw new Error("Gemini rate limit. Please wait a moment.");
+  const body = JSON.stringify({
+    contents: [{ role: "user", parts: [{ text: prompt }, ...refParts] }],
+  });
+
+  const maxAttempts = 4;
+  let lastErr = "";
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(
+      `${GEMINI_API}/models/${GEMINI_IMAGE_MODEL}:generateContent`,
+      { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body },
+    );
+    if (res.ok) {
+      const payload = await res.json();
+      const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> =
+        payload?.candidates?.[0]?.content?.parts ?? [];
+      const inline = parts.find((p) => p?.inlineData?.data);
+      if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
+      const mime = inline.inlineData.mimeType || "image/png";
+      return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext: (mime.split("/")[1] || "png") };
+    }
+    lastErr = await res.text();
     if (res.status === 401 || res.status === 403) throw new Error("Invalid GEMINI_API_KEY.");
-    throw new Error(`Gemini error ${res.status}: ${text.slice(0, 300)}`);
+    if (res.status !== 429 && res.status < 500) {
+      throw new Error(`Gemini error ${res.status}: ${lastErr.slice(0, 300)}`);
+    }
+    // 429 or 5xx — exponential backoff: 2s, 5s, 12s
+    if (attempt < maxAttempts - 1) {
+      const waitMs = [2000, 5000, 12000][attempt] ?? 15000;
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
   }
-  const payload = await res.json();
-  const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> =
-    payload?.candidates?.[0]?.content?.parts ?? [];
-  const inline = parts.find((p) => p?.inlineData?.data);
-  if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
-  const mime = inline.inlineData.mimeType || "image/png";
-  return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext: (mime.split("/")[1] || "png") };
+  throw new Error(
+    "Gemini free tier is rate-limited (a few image generations per minute). Please wait ~1 minute and try again, or upgrade your Gemini API plan.",
+  );
 }
 
 
