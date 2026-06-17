@@ -39,50 +39,58 @@ async function callRekaChat(path: string, body: unknown) {
   return res.json();
 }
 
-async function fetchImageAsInlineData(url: string) {
+async function fetchImageAsDataUrl(url: string) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not fetch reference image (${res.status})`);
   const mime = res.headers.get("content-type") || "image/jpeg";
   const buf = Buffer.from(await res.arrayBuffer());
-  return { inlineData: { mimeType: mime, data: buf.toString("base64") } };
+  return `data:${mime};base64,${buf.toString("base64")}`;
 }
 
 async function generateGeminiImage(prompt: string, referenceUrls: string[]) {
-  const key = getGeminiApiKey();
-  const refParts = await Promise.all(referenceUrls.map(fetchImageAsInlineData));
+  const key = getLovableApiKey();
+  const refDataUrls = await Promise.all(referenceUrls.map(fetchImageAsDataUrl));
+  const userContent: Array<Record<string, unknown>> = [{ type: "text", text: prompt }];
+  for (const url of refDataUrls) {
+    userContent.push({ type: "image_url", image_url: { url } });
+  }
   const body = JSON.stringify({
-    contents: [{ role: "user", parts: [{ text: prompt }, ...refParts] }],
+    model: GEMINI_IMAGE_MODEL,
+    messages: [{ role: "user", content: userContent }],
+    modalities: ["image", "text"],
   });
 
   const maxAttempts = 4;
   let lastErr = "";
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const res = await fetch(
-      `${GEMINI_API}/models/${GEMINI_IMAGE_MODEL}:generateContent`,
-      { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": key }, body },
-    );
+    const res = await fetch(`${LOVABLE_AI_API}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+      body,
+    });
     if (res.ok) {
       const payload = await res.json();
-      const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> =
-        payload?.candidates?.[0]?.content?.parts ?? [];
-      const inline = parts.find((p) => p?.inlineData?.data);
-      if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
-      const mime = inline.inlineData.mimeType || "image/png";
-      return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext: (mime.split("/")[1] || "png") };
+      const msg = payload?.choices?.[0]?.message;
+      const imgUrl: string | undefined = msg?.images?.[0]?.image_url?.url;
+      if (!imgUrl) throw new Error("No image returned by Gemini");
+      const match = imgUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) throw new Error("Unexpected image format from Gemini");
+      const mime = match[1];
+      return { bytes: Buffer.from(match[2], "base64"), mime, ext: mime.split("/")[1] || "png" };
     }
     lastErr = await res.text();
-    if (res.status === 401 || res.status === 403) throw new Error("Invalid GEMINI_API_KEY.");
+    if (res.status === 401 || res.status === 403) throw new Error("AI gateway auth failed.");
+    if (res.status === 402) throw new Error("Lovable AI credits exhausted. Please add credits in Settings.");
     if (res.status !== 429 && res.status < 500) {
       throw new Error(`Gemini error ${res.status}: ${lastErr.slice(0, 300)}`);
     }
-    // 429 or 5xx — exponential backoff: 2s, 5s, 12s
     if (attempt < maxAttempts - 1) {
       const waitMs = [2000, 5000, 12000][attempt] ?? 15000;
       await new Promise((r) => setTimeout(r, waitMs));
     }
   }
   throw new Error(
-    "Gemini free tier is rate-limited (a few image generations per minute). Please wait ~1 minute and try again, or upgrade your Gemini API plan.",
+    "Image generation is temporarily rate-limited. Please wait ~1 minute and try again.",
   );
 }
 
