@@ -46,12 +46,17 @@ function Discover() {
   const [result, setResult] = useState<{ id: string; outfits: Outfit[] } | null>(null);
   const [tryOnImages, setTryOnImages] = useState<Record<number, string>>({});
   const [tryOnLoading, setTryOnLoading] = useState<Record<number, boolean>>({});
+  const tryOnBusy = Object.values(tryOnLoading).some(Boolean);
 
   async function visualize(index: number) {
-    if (!result) return;
+    if (!result || tryOnBusy) return;
     setTryOnLoading((s) => ({ ...s, [index]: true }));
     try {
       const res = await tryOnFn({ data: { recommendationId: result.id, outfitIndex: index } });
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
       setTryOnImages((s) => ({ ...s, [index]: res.url }));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not generate visual");
@@ -239,7 +244,7 @@ function Discover() {
               )}
               <button
                 onClick={() => visualize(i)}
-                disabled={tryOnLoading[i]}
+                disabled={tryOnLoading[i] || tryOnBusy}
                 className="mt-4 text-xs tracking-widest uppercase border border-foreground px-4 py-2 hover:bg-foreground hover:text-background transition-colors disabled:opacity-50"
               >
                 {tryOnLoading[i] ? "Rendering…" : tryOnImages[i] ? "Regenerate visual" : "Visualize this look"}
