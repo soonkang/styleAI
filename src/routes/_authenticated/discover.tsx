@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { recommendOutfits, analyzeUpload, generateTryOn } from "@/lib/style-ai.functions";
 import { toast } from "sonner";
@@ -49,6 +49,12 @@ function Discover() {
   const [tryOnCooldownUntil, setTryOnCooldownUntil] = useState<number>(0);
   const tryOnBusy = Object.values(tryOnLoading).some(Boolean);
   const tryOnCoolingDown = Date.now() < tryOnCooldownUntil;
+
+  useEffect(() => {
+    if (!tryOnCoolingDown) return;
+    const timer = window.setTimeout(() => setTryOnCooldownUntil(0), Math.max(0, tryOnCooldownUntil - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [tryOnCoolingDown, tryOnCooldownUntil]);
 
   async function visualize(index: number) {
     if (!result || tryOnBusy || tryOnCoolingDown) return;
