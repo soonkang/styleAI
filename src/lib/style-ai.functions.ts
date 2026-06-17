@@ -4,10 +4,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const REKA_API = "https://api.reka.ai/v1";
 const TEXT_MODEL = "reka-flash";
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+const GEMINI_IMAGE_MODEL = "gemini-2.5-flash-image";
 
 function getRekaApiKey() {
   const key = process.env.REKA_API_KEY;
   if (!key) throw new Error("Missing REKA_API_KEY");
+  return key;
+}
+
+function getGeminiApiKey() {
+  const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  if (!key) throw new Error("Missing GEMINI_API_KEY");
   return key;
 }
 
@@ -30,6 +38,43 @@ async function callRekaChat(path: string, body: unknown) {
 
   return res.json();
 }
+
+async function fetchImageAsInlineData(url: string) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not fetch reference image (${res.status})`);
+  const mime = res.headers.get("content-type") || "image/jpeg";
+  const buf = Buffer.from(await res.arrayBuffer());
+  return { inlineData: { mimeType: mime, data: buf.toString("base64") } };
+}
+
+async function generateGeminiImage(prompt: string, referenceUrls: string[]) {
+  const key = getGeminiApiKey();
+  const refParts = await Promise.all(referenceUrls.map(fetchImageAsInlineData));
+  const res = await fetch(
+    `${GEMINI_API}/models/${GEMINI_IMAGE_MODEL}:generateContent`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }, ...refParts] }],
+      }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    if (res.status === 429) throw new Error("Gemini rate limit. Please wait a moment.");
+    if (res.status === 401 || res.status === 403) throw new Error("Invalid GEMINI_API_KEY.");
+    throw new Error(`Gemini error ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const payload = await res.json();
+  const parts: Array<{ inlineData?: { mimeType?: string; data?: string } }> =
+    payload?.candidates?.[0]?.content?.parts ?? [];
+  const inline = parts.find((p) => p?.inlineData?.data);
+  if (!inline?.inlineData?.data) throw new Error("No image returned by Gemini");
+  const mime = inline.inlineData.mimeType || "image/png";
+  return { bytes: Buffer.from(inline.inlineData.data, "base64"), mime, ext: (mime.split("/")[1] || "png") };
+}
+
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
