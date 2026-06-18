@@ -20,6 +20,7 @@ export function Nav({ authed }: { authed: boolean }) {
             <>
               <Link to="/dashboard" className="hover:text-accent transition-colors">Atelier</Link>
               <Link to="/discover" className="hover:text-accent transition-colors">Discover</Link>
+              <Link to="/tryon" className="hover:text-accent transition-colors">Try-On</Link>
               <Link to="/wardrobe" className="hover:text-accent transition-colors">Wardrobe</Link>
               <Link to="/profile" className="hover:text-accent transition-colors">Profile</Link>
             </>

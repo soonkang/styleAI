@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedWardrobeRouteImport } from './routes/_authenticated/wardrobe'
+import { Route as AuthenticatedTryonRouteImport } from './routes/_authenticated/tryon'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 import { Route as AuthenticatedDiscoverRouteImport } from './routes/_authenticated/discover'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
@@ -35,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
 const AuthenticatedWardrobeRoute = AuthenticatedWardrobeRouteImport.update({
   id: '/wardrobe',
   path: '/wardrobe',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedTryonRoute = AuthenticatedTryonRouteImport.update({
+  id: '/tryon',
+  path: '/tryon',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/discover': typeof AuthenticatedDiscoverRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/tryon': typeof AuthenticatedTryonRoute
   '/wardrobe': typeof AuthenticatedWardrobeRoute
   '/looks/$id': typeof AuthenticatedLooksIdRoute
 }
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/discover': typeof AuthenticatedDiscoverRoute
   '/profile': typeof AuthenticatedProfileRoute
+  '/tryon': typeof AuthenticatedTryonRoute
   '/wardrobe': typeof AuthenticatedWardrobeRoute
   '/looks/$id': typeof AuthenticatedLooksIdRoute
 }
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/discover': typeof AuthenticatedDiscoverRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/_authenticated/tryon': typeof AuthenticatedTryonRoute
   '/_authenticated/wardrobe': typeof AuthenticatedWardrobeRoute
   '/_authenticated/looks/$id': typeof AuthenticatedLooksIdRoute
 }
@@ -95,6 +104,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/discover'
     | '/profile'
+    | '/tryon'
     | '/wardrobe'
     | '/looks/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -104,6 +114,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/discover'
     | '/profile'
+    | '/tryon'
     | '/wardrobe'
     | '/looks/$id'
   id:
@@ -114,6 +125,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/discover'
     | '/_authenticated/profile'
+    | '/_authenticated/tryon'
     | '/_authenticated/wardrobe'
     | '/_authenticated/looks/$id'
   fileRoutesById: FileRoutesById
@@ -154,6 +166,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedWardrobeRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/tryon': {
+      id: '/_authenticated/tryon'
+      path: '/tryon'
+      fullPath: '/tryon'
+      preLoaderRoute: typeof AuthenticatedTryonRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/profile': {
       id: '/_authenticated/profile'
       path: '/profile'
@@ -189,6 +208,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDiscoverRoute: typeof AuthenticatedDiscoverRoute
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+  AuthenticatedTryonRoute: typeof AuthenticatedTryonRoute
   AuthenticatedWardrobeRoute: typeof AuthenticatedWardrobeRoute
   AuthenticatedLooksIdRoute: typeof AuthenticatedLooksIdRoute
 }
@@ -197,6 +217,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDiscoverRoute: AuthenticatedDiscoverRoute,
   AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+  AuthenticatedTryonRoute: AuthenticatedTryonRoute,
   AuthenticatedWardrobeRoute: AuthenticatedWardrobeRoute,
   AuthenticatedLooksIdRoute: AuthenticatedLooksIdRoute,
 }

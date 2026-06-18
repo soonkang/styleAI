@@ -341,3 +341,69 @@ export const generateTryOn = createServerFn({ method: "POST" })
     return { ok: true as const, url: signed?.signedUrl ?? "", path };
   });
 
+export const customTryOn = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      selfieUploadId: z.string().uuid(),
+      clothingUploadIds: z.array(z.string().uuid()).min(1).max(5),
+      notes: z.string().max(400).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const ids = [data.selfieUploadId, ...data.clothingUploadIds];
+    const { data: rows, error } = await context.supabase
+      .from("uploads")
+      .select("id, kind, storage_path")
+      .in("id", ids);
+    if (error || !rows) throw new Error("Uploads not found");
+
+    const selfie = rows.find((r) => r.id === data.selfieUploadId);
+    if (!selfie) throw new Error("Selfie not found");
+    const clothes = data.clothingUploadIds
+      .map((id) => rows.find((r) => r.id === id))
+      .filter((r): r is NonNullable<typeof r> => Boolean(r));
+    if (clothes.length === 0) throw new Error("No clothing items found");
+
+    async function sign(path: string) {
+      const { data: s } = await context.supabase.storage
+        .from("user-uploads")
+        .createSignedUrl(path, 60 * 10);
+      if (!s) throw new Error("Could not sign image");
+      return s.signedUrl;
+    }
+
+    const selfieUrl = await sign(selfie.storage_path);
+    const clothingUrls = await Promise.all(clothes.map((c) => sign(c.storage_path)));
+
+    const prompt =
+      `Editorial full-body virtual try-on photograph. Soft natural light, neutral studio backdrop. ` +
+      `Dress the PERSON from the first reference image in the CLOTHING shown in the following ${clothingUrls.length} reference image(s). ` +
+      `Preserve the person's face, hair, skin tone, and body shape faithfully. Render each garment realistically — fit, drape, color, and texture should match the references. ` +
+      (data.notes ? `Notes: ${data.notes}. ` : "") +
+      `Suitable for Singapore tropical climate.`;
+
+    let generated: Awaited<ReturnType<typeof generateGeminiImage>>;
+    try {
+      generated = await generateGeminiImage(prompt, [selfieUrl, ...clothingUrls]);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      if (isRecoverableGeminiError(message)) {
+        return { ok: false as const, error: message, retryAfterSeconds: 60 };
+      }
+      throw error;
+    }
+
+    const { bytes, mime, ext } = generated;
+    const path = `${context.userId}/custom-${Date.now()}.${ext}`;
+    const { error: upErr } = await context.supabase.storage
+      .from("tryons")
+      .upload(path, bytes, { contentType: mime, upsert: false });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: signed } = await context.supabase.storage
+      .from("tryons")
+      .createSignedUrl(path, 60 * 60);
+    return { ok: true as const, url: signed?.signedUrl ?? "", path };
+  });
+
