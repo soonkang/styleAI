@@ -102,6 +102,80 @@ function isRecoverableGeminiError(message: string) {
   return /gemini|rate.?limit|429|api key/i.test(message);
 }
 
+function asNonEmptyString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+type OutfitItem = { category: string; description: string; color: string; search_query: string };
+type Outfit = {
+  name: string;
+  summary: string;
+  items: OutfitItem[];
+  why_it_works: string;
+  styling_tips: string[];
+};
+
+function normalizeOutfitItem(item: unknown): OutfitItem | null {
+  if (!item || typeof item !== "object") return null;
+  const value = item as Record<string, unknown>;
+  const description = asNonEmptyString(value.description);
+  const searchQuery = asNonEmptyString(value.search_query, description);
+  if (!description && !searchQuery) return null;
+  return {
+    category: asNonEmptyString(value.category, "Item"),
+    description,
+    color: asNonEmptyString(value.color, "Unknown"),
+    search_query: searchQuery,
+  };
+}
+
+function normalizeOutfit(outfit: unknown): Outfit | null {
+  if (!outfit || typeof outfit !== "object") return null;
+  const value = outfit as Record<string, unknown>;
+  const items = Array.isArray(value.items)
+    ? value.items.map(normalizeOutfitItem).filter((entry): entry is OutfitItem => Boolean(entry))
+    : [];
+  const stylingTips = Array.isArray(value.styling_tips)
+    ? value.styling_tips.map((tip) => asNonEmptyString(tip)).filter(Boolean)
+    : [];
+
+  return {
+    name: asNonEmptyString(value.name, "Styled look"),
+    summary: asNonEmptyString(value.summary, "A balanced outfit recommendation."),
+    items,
+    why_it_works: asNonEmptyString(value.why_it_works, "This combination keeps the proportions balanced and practical."),
+    styling_tips: stylingTips,
+  };
+}
+
+function normalizeOutfitResponse(content: string): { outfits: Outfit[] } {
+  const candidates: unknown[] = [];
+
+  try {
+    candidates.push(JSON.parse(content));
+  } catch {
+    const match = content.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        candidates.push(JSON.parse(match[0]));
+      } catch {
+        // ignore and fall through to empty result
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const value = candidate as { outfits?: unknown };
+    const outfits = Array.isArray(value.outfits)
+      ? value.outfits.map(normalizeOutfit).filter((entry): entry is Outfit => Boolean(entry))
+      : [];
+    return { outfits };
+  }
+
+  return { outfits: [] };
+}
+
 
 export const getSignedUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -126,6 +200,7 @@ export const analyzeUpload = createServerFn({ method: "POST" })
       .from("uploads")
       .select("id,kind,storage_path")
       .eq("id", data.uploadId)
+      .eq("user_id", context.userId)
       .single();
     if (error || !row) throw new Error("Upload not found");
 
@@ -185,13 +260,14 @@ export const recommendOutfits = createServerFn({ method: "POST" })
         .from("uploads")
         .select("storage_path")
         .eq("id", data.selfieUploadId)
+        .eq("user_id", context.userId)
         .single();
-      if (up) {
-        const { data: signed } = await context.supabase.storage
-          .from("user-uploads")
-          .createSignedUrl(up.storage_path, 60 * 10);
-        selfieUrl = signed?.signedUrl ?? null;
-      }
+      if (!up) throw new Error("Selfie not found");
+      const { data: signed, error: signError } = await context.supabase.storage
+        .from("user-uploads")
+        .createSignedUrl(up.storage_path, 60 * 10);
+      if (signError || !signed) throw new Error(signError?.message ?? "Could not sign selfie");
+      selfieUrl = signed.signedUrl;
     }
 
     const messages: Array<Record<string, unknown>> = [
@@ -230,23 +306,7 @@ export const recommendOutfits = createServerFn({ method: "POST" })
     });
 
     const content: string = result?.choices?.[0]?.message?.content ?? "{}";
-    type OutfitItem = { category: string; description: string; color: string; search_query: string };
-    type Outfit = {
-      name: string;
-      summary: string;
-      items: OutfitItem[];
-      why_it_works: string;
-      styling_tips: string[];
-    };
-
-    let parsed: { outfits: Outfit[] };
-    try {
-      parsed = JSON.parse(content);
-    } catch {
-      const match = content.match(/\{[\s\S]*\}/);
-      parsed = match ? JSON.parse(match[0]) : { outfits: [] };
-    }
-    if (!Array.isArray(parsed.outfits)) parsed.outfits = [];
+    const parsed = normalizeOutfitResponse(content);
 
     const { data: saved, error } = await context.supabase
       .from("recommendations")
@@ -277,10 +337,12 @@ export const generateTryOn = createServerFn({ method: "POST" })
       .from("recommendations")
       .select("id, outfits, occasion, selfie_upload_id")
       .eq("id", data.recommendationId)
+      .eq("user_id", context.userId)
       .single();
     if (error || !rec) throw new Error("Recommendation not found");
 
-    const outfits = (rec.outfits as { outfits?: unknown[] })?.outfits ?? [];
+    const storedOutfits = rec.outfits as { outfits?: unknown } | null;
+    const outfits = Array.isArray(storedOutfits?.outfits) ? storedOutfits.outfits : [];
     const outfit = outfits[data.outfitIndex] as
       | { name?: string; summary?: string; items?: Array<{ description?: string; color?: string }> }
       | undefined;
@@ -295,13 +357,14 @@ export const generateTryOn = createServerFn({ method: "POST" })
         .from("uploads")
         .select("storage_path")
         .eq("id", rec.selfie_upload_id)
+        .eq("user_id", context.userId)
         .single();
-      if (up) {
-        const { data: signed } = await context.supabase.storage
-          .from("user-uploads")
-          .createSignedUrl(up.storage_path, 60 * 10);
-        selfieUrl = signed?.signedUrl ?? null;
-      }
+      if (!up) throw new Error("Selfie not found");
+      const { data: signed, error: signError } = await context.supabase.storage
+        .from("user-uploads")
+        .createSignedUrl(up.storage_path, 60 * 10);
+      if (signError || !signed) throw new Error(signError?.message ?? "Could not sign image");
+      selfieUrl = signed.signedUrl;
     }
 
     const prompt =
@@ -354,16 +417,23 @@ export const customTryOn = createServerFn({ method: "POST" })
     const ids = [data.selfieUploadId, ...data.clothingUploadIds];
     const { data: rows, error } = await context.supabase
       .from("uploads")
-      .select("id, kind, storage_path")
+      .select("id, kind, storage_path, user_id")
       .in("id", ids);
     if (error || !rows) throw new Error("Uploads not found");
+    if (rows.length !== ids.length) throw new Error("One or more uploads were not found");
 
     const selfie = rows.find((r) => r.id === data.selfieUploadId);
     if (!selfie) throw new Error("Selfie not found");
+    if (selfie.user_id !== context.userId || selfie.kind !== "selfie") {
+      throw new Error("Selected selfie is invalid");
+    }
     const clothes = data.clothingUploadIds
       .map((id) => rows.find((r) => r.id === id))
       .filter((r): r is NonNullable<typeof r> => Boolean(r));
     if (clothes.length === 0) throw new Error("No clothing items found");
+    if (clothes.some((item) => item.user_id !== context.userId || item.kind !== "clothing")) {
+      throw new Error("One or more clothing items are invalid");
+    }
 
     async function sign(path: string) {
       const { data: s } = await context.supabase.storage

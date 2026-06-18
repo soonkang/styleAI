@@ -119,7 +119,9 @@ function Discover() {
           toast.success("Selfie analysis ready.");
           selfies.refetch();
         })
-        .catch(() => {});
+        .catch((error) => {
+          toast.error(error instanceof Error ? error.message : "Selfie analysis failed");
+        });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
