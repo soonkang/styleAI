@@ -140,54 +140,58 @@ function Wardrobe() {
 
       {list.isLoading ? (
         <p className="text-muted-foreground">Loading…</p>
-      ) : list.data && list.data.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          {list.data.map((u) => (
-            <article key={u.id} className="border border-border">
-              {u.url && (
-                <img src={u.url} alt={u.kind} loading="lazy" className="w-full aspect-[4/5] object-cover bg-muted" />
-              )}
-              <div className="p-6">
-                <p className="eyebrow">{u.kind}</p>
-                <p className="mt-1 text-xs text-muted-foreground">{new Date(u.created_at).toLocaleString()}</p>
-                <div className="mt-4 prose prose-sm prose-neutral max-w-none">
-                  {(u.analysis as { text?: string } | null)?.text ? (
-                    <ReactMarkdown>{(u.analysis as { text?: string }).text!}</ReactMarkdown>
-                  ) : (
-                    <div className="flex gap-2">
-  <button
-    onClick={async () => {
-      toast.message("Analyzing…");
-
-      await analyze({
-        data: { uploadId: u.id },
-      });
-
-      qc.invalidateQueries({
-        queryKey: ["uploads", user.id],
-      });
-    }}
-    className="text-sm border border-foreground px-4 py-2 hover:bg-foreground hover:text-background"
-  >
-    Analyze with AI
-  </button>
-
-  <button
-    onClick={() => deleteUpload(u.id, u.storage_path)}
-    className="text-sm border border-red-500 px-4 py-2 text-red-500 hover:bg-red-500 hover:text-white"
-  >
-    Delete
-  </button>
-</div>
-                  )}
+      ) : (() => {
+        const filtered = (list.data ?? []).filter((u) => u.kind === kind);
+        if (filtered.length === 0) {
+          return (
+            <p className="text-muted-foreground">
+              No {kind} uploads yet — upload your first {kind} image above.
+            </p>
+          );
+        }
+        return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {filtered.map((u) => (
+              <article key={u.id} className="border border-border">
+                {u.url && (
+                  <img src={u.url} alt={u.kind} loading="lazy" className="w-full aspect-[4/5] object-cover bg-muted" />
+                )}
+                <div className="p-6">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="eyebrow">{u.kind}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{new Date(u.created_at).toLocaleString()}</p>
+                    </div>
+                    <button
+                      onClick={() => deleteUpload(u.id, u.storage_path)}
+                      className="text-xs border border-red-500 px-3 py-1 text-red-500 hover:bg-red-500 hover:text-white"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <div className="mt-4 prose prose-sm prose-neutral max-w-none">
+                    {(u.analysis as { text?: string } | null)?.text ? (
+                      <ReactMarkdown>{(u.analysis as { text?: string }).text!}</ReactMarkdown>
+                    ) : (
+                      <button
+                        onClick={async () => {
+                          toast.message("Analyzing…");
+                          await analyze({ data: { uploadId: u.id } });
+                          qc.invalidateQueries({ queryKey: ["uploads", user.id] });
+                        }}
+                        className="text-sm border border-foreground px-4 py-2 hover:bg-foreground hover:text-background"
+                      >
+                        Analyze with AI
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      ) : (
-        <p className="text-muted-foreground">Nothing here yet — upload your first image above.</p>
-      )}
+              </article>
+            ))}
+          </div>
+        );
+      })()}
+
     </div>
   );
 }

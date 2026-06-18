@@ -78,15 +78,24 @@ function Dashboard() {
         ) : recent.data && recent.data.length > 0 ? (
           <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
             {recent.data.map((r) => (
-              <div key={r.id} className="border border-border p-6">
+              <Link
+                key={r.id}
+                to="/looks/$id"
+                params={{ id: r.id }}
+                className="border border-border p-6 hover:border-accent transition-colors group"
+              >
                 <p className="eyebrow">{r.category ?? "Occasion"}</p>
-                <h3 className="mt-2 font-serif text-xl">{r.occasion}</h3>
+                <h3 className="mt-2 font-serif text-xl group-hover:text-accent">{r.occasion}</h3>
                 <p className="mt-3 text-xs text-muted-foreground">
                   {new Date(r.created_at).toLocaleDateString()}
                 </p>
-              </div>
+                <p className="mt-4 text-xs border-b border-foreground inline-block group-hover:text-accent group-hover:border-accent">
+                  View look →
+                </p>
+              </Link>
             ))}
           </div>
+
         ) : (
           <p className="mt-8 text-muted-foreground text-sm">No looks yet — start your first session.</p>
         )}
